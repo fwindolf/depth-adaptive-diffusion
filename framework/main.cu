@@ -26,44 +26,35 @@ __device__ float rho(float *iL, float *iR, int nc, float lambda)
 	return sum * lambda;
 }
 
-
 /**
  * Initialize P to value
  *
- * x * y * gc threads needed
+ * x threads needed
  */
 __global__ void g_initialize_p(float * P, int w, int h, int gc, float value)
 {
 	int x = threadIdx.x + blockDim.x * blockIdx.x;
-	int y = threadIdx.y + blockDim.y * blockIdx.y;
-	int g = threadIdx.z + blockDim.z * blockIdx.z;
 
-	if (x < w && y < h && g < gc)
+	if (x < w * h * gc * 3)
 	{
-		write_data(P, value, w, h, 3 * gc, x, y, 1*g);
-		write_data(P, value, w, h, 3 * gc, x, y, 2*g);
-		write_data(P, value, w, h, 3 * gc, x, y, 3*g);
+		P[x] = value;
 	}
 }
-
 
 /**
  * Initialize Phi to value
  *
- * x * y * gc threads needed
+ * x threads needed
  */
 __global__ void g_initialize_phi(float * Phi, int w, int h, int gc, float value)
 {
 	int x = threadIdx.x + blockDim.x * blockIdx.x;
-	int y = threadIdx.y + blockDim.y * blockIdx.y;
-	int g = threadIdx.z + blockDim.z * blockIdx.z;
 
-	if (x < w && y < h && g < gc)
+	if (x < w * h * gc)
 	{
-		write_data(Phi, value, w, h, gc, x, y, g);
+		Phi[x] = value;
 	}
 }
-
 
 /**
  * Project the P vector back onto C
@@ -74,49 +65,53 @@ __global__ void g_initialize_phi(float * Phi, int w, int h, int gc, float value)
  * IL and IR are the left/right original images with x * y * nc
  * G contains the disparity for each pixel [gamma_min ... gamma_max] = gc
  */
-__global__ void g_project_p_c(float * P, float * IL, float *IR, int w,
-		int h, int nc, int gc, float lambda, float gamma_min)
+__global__ void g_project_p_c(float * P, float * IL, float *IR, int w, int h,
+		int nc, int gc, float lambda, float gamma_min)
 {
 	int x = threadIdx.x + blockDim.x * blockIdx.x;
 	int y = threadIdx.y + blockDim.y * blockIdx.y;
-	int g = threadIdx.z + blockDim.z * blockIdx.z;
 
-	if (x < w && y < h && g < gc)
+	if (x < w && y < h)
 	{
-		// p1..2 must hold true to the constraint that sqrt(p1² + p2²) <= 1
-		// p3 must hold true to the constraint that |p3| <= rho(x, gamma)
-		int max_z = 3 * gc;
-		int idx_p1_z = 0 * g;
-		int idx_p2_z = 1 * g;
-		int idx_p3_z = 2 * g;
-
-		float p1 = read_data(P, w, h, max_z, x, y, idx_p1_z);
-		float p2 = read_data(P, w, h, max_z, x, y, idx_p2_z);
-		float p3 = read_data(P, w, h, max_z, x, y, idx_p3_z);
-
-		// p1, p2
-		p1 = p1 / max(1.f, sqrtf(square(p1) + square(p2)));
-		p2 = p2 / max(1.f, sqrtf(square(p1) + square(p2)));
-
-		// p3
-		float iL[3];
-		float iR[3];
-
-		// Save image data to temporary arrays
-		for (int c = 0; c < nc; c++)
+		for (int g = 0; g < gc; g++)
 		{
-			iL[c] = read_data(IL, w, h, nc, x, y, c);
-			// Use the disparity value of this layer of P
-			iR[c] = read_data(IR, w, h, nc, x + gamma_min + g, y, c);
+			// p1..2 must hold true to the constraint that sqrt(p1² + p2²) <= 1
+			// p3 must hold true to the constraint that |p3| <= rho(x, gamma)
+			int max_z = 3 * gc;
+			int idx_p1_z = 0 * gc + g;
+			int idx_p2_z = 1 * gc + g;
+			int idx_p3_z = 2 * gc + g;
+
+			float p1 = read_data(P, w, h, max_z, x, y, idx_p1_z);
+			float p2 = read_data(P, w, h, max_z, x, y, idx_p2_z);
+			float p3 = read_data(P, w, h, max_z, x, y, idx_p3_z);
+
+			// p1, p2
+			float tmp = max(1.f, sqrtf(square(p1) + square(p2)));
+			p1 = p1 / tmp;
+			p2 = p2 / tmp;
+
+			// p3
+			float iL[3];
+			float iR[3];
+
+			// Save image data to temporary arrays
+			for (int c = 0; c < nc; c++)
+			{
+				iL[c] = read_data(IL, w, h, nc, x, y, c);
+				// Use the disparity value of this layer of P
+				// index of gamma runs from 0...gc, thus offset by gamma_min (eg. -16)
+				iR[c] = read_data(IR, w, h, nc, x + gamma_min + g, y, c);
+			}
+
+			// p3
+			p3 = p3 / max(1.f, fabs(p3) / rho(iL, iR, nc, lambda));
+
+			// write the results back to P
+			write_data(P, p1, w, h, max_z, x, y, idx_p1_z);
+			write_data(P, p2, w, h, max_z, x, y, idx_p2_z);
+			write_data(P, p3, w, h, max_z, x, y, idx_p3_z);
 		}
-
-		// p3
-		p3 = p3 / max(1.f, fabs(p3)/rho(iL, iR, nc, lambda));
-
-		// write the results back to P
-		write_data(P, p1, w, h, max_z, x, y, idx_p1_z);
-		write_data(P, p2, w, h, max_z, x, y, idx_p2_z);
-		write_data(P, p3, w, h, max_z, x, y, idx_p3_z);
 	}
 }
 
@@ -133,13 +128,18 @@ __global__ void g_project_phi_d(float * Phi, int w, int h, int gc)
 	// phi must be truncated to the interval [0,1]
 	int x = threadIdx.x + blockDim.x * blockIdx.x;
 	int y = threadIdx.y + blockDim.y * blockIdx.y;
-	int g = threadIdx.z + blockDim.z * blockIdx.z;
 
-	if (x < w && y < h && g < gc)
+	if (x < w && y < h)
 	{
-		float phi = read_data(Phi, w, h, gc, x, y, g);
-		// TODO: Is clamping to [0, 1] enough or is there something to do with gamma_min => 0, gamma_max => 1?
-		write_data(Phi, clamp(phi, 0, 1), w, h, gc, x, y, g);
+		for (int g = 1; g < gc - 1; g++)
+		{
+			float phi = read_data(Phi, w, h, gc, x, y, g);
+			write_data(Phi, clamp(phi, 0, 1), w, h, gc, x, y, g);
+		}
+		// Phi of (x, y, gamma_min) = 1
+		write_data(Phi, 1.f, w, h, gc, x, y, 0);
+		// Phi of (x, y, gamma_max) = 0
+		write_data(Phi, 0.f, w, h, gc, x, y, gc - 1);
 	}
 }
 
@@ -157,24 +157,31 @@ __global__ void g_update_p(float * P, float *Grad3_Phi, int w, int h, int gc,
 	// p^k+1 = PC(p^k + tau_d * grad3(Phi))
 	int x = threadIdx.x + blockDim.x * blockIdx.x;
 	int y = threadIdx.y + blockDim.y * blockIdx.y;
-	int g = threadIdx.z + blockDim.z * blockIdx.z;
 
-	if (x < w && y < h && g < gc)
+	if (x < w && y < h)
 	{
 		// p has 3 channels
 		int pc = 3;
 		// maximum z index for P and Grad3_Phi
 		int max_z = 3 * gc;
+		int idx_z;
 
 		float p_next;
-		for (int i = 0; i < pc; i++)
-		{
-			int idx_z = i * gc;
-			p_next = read_data(P, w, h, max_z, x, y, idx_z)
-					+ tau_d * read_data(Grad3_Phi, w, h, max_z, x, y, idx_z);
 
-			// Write back to P
-			write_data(P, p_next, w, h, max_z, x, y, idx_z);
+		for (int g = 0; g < gc; g++)
+		{
+
+			for (int i = 0; i < pc; i++)
+			{
+				idx_z = i * gc + g;
+				p_next = read_data(P, w, h, max_z, x, y, idx_z)
+						+ tau_d
+								* read_data(Grad3_Phi, w, h, max_z, x, y,
+										idx_z);
+
+				// Write back to P
+				write_data(P, p_next, w, h, max_z, x, y, idx_z);
+			}
 		}
 	}
 }
@@ -192,15 +199,17 @@ __global__ void g_update_phi(float *Phi, float *Div3_P, int w, int h, int gc,
 	// phi^k+1 = PD(phi^k + div3(p^k))
 	int x = threadIdx.x + blockDim.x * blockIdx.x;
 	int y = threadIdx.y + blockDim.y * blockIdx.y;
-	int g = threadIdx.z + blockDim.z * blockIdx.z;
 
-	if (x < w && y < h && g < gc)
+	if (x < w && y < h)
 	{
-		float phi_next = read_data(Phi, w, h, gc, x, y, g)
-				+ tau_p * read_data(Div3_P, w, h, gc, x, y, g);
+		for (int g = 0; g < gc; g++)
+		{
+			float phi_next = read_data(Phi, w, h, gc, x, y, g)
+					+ tau_p * read_data(Div3_P, w, h, gc, x, y, g);
 
-		// Write back to Phi
-		write_data(Phi, phi_next, w, h, gc, x, y, g);
+			// Write back to Phi
+			write_data(Phi, phi_next, w, h, gc, x, y, g);
+		}
 	}
 }
 
@@ -217,25 +226,31 @@ __global__ void g_grad3(float *Phi, float *Grad3_Phi, int w, int h, int gc)
 	// Gradient 3 is defined via forward differences
 	int x = threadIdx.x + blockDim.x * blockIdx.x;
 	int y = threadIdx.y + blockDim.y * blockIdx.y;
-	int g = threadIdx.z + blockDim.z * blockIdx.z;
 
-	if (x < w && y < h && g < gc)
+	if (x < w && y < h)
 	{
-		float phi = read_data(Phi, w, h, gc, x, y, g);
-		float dx = read_data(Phi, w, h, gc, x + 1, y, g) - phi;
-		float dy = read_data(Phi, w, h, gc, x, y + 1, g) - phi;
-		float dg = read_data(Phi, w, h, gc, x, y, g + 1) - phi;
+		float next_g = read_data(Phi, w, h, gc, x, y, gc);
+		for (int g = gc; g > 0; g--)
+		{
+			float phi = read_data(Phi, w, h, gc, x, y, g);
+			float dx = read_data(Phi, w, h, gc, x + 1, y, g) - phi;
+			float dy = read_data(Phi, w, h, gc, x, y + 1, g) - phi;
+			float dg = next_g - phi;
 
-		// 3 channels on the gradient
-		int max_z = 3 * gc;
-		int idx_phi_x = 0 * g;
-		int idx_phi_y = 1 * g;
-		int idx_phi_g = 2 * g;
+			next_g = phi;
 
-		// Write the forward differences in different directions stacked into phi
-		write_data(Grad3_Phi, dx, w, h, max_z, x, y, idx_phi_x);
-		write_data(Grad3_Phi, dy, w, h, max_z, x, y, idx_phi_y);
-		write_data(Grad3_Phi, dg, w, h, max_z, x, y, idx_phi_g);
+			// 3 channels on the gradient
+			int max_z = 3 * gc;
+			int idx_phi_x = 0 * gc + g;
+			int idx_phi_y = 1 * gc + g;
+			int idx_phi_g = 2 * gc + g;
+
+			// Write the forward differences in different directions stacked into phi
+			write_data(Grad3_Phi, dx, w, h, max_z, x, y, idx_phi_x);
+			write_data(Grad3_Phi, dy, w, h, max_z, x, y, idx_phi_y);
+			write_data(Grad3_Phi, dg, w, h, max_z, x, y, idx_phi_g);
+		}
+
 	}
 }
 
@@ -251,28 +266,30 @@ __global__ void g_div3(float *P, float *Div3_P, int w, int h, int gc)
 {
 	int x = threadIdx.x + blockDim.x * blockIdx.x;
 	int y = threadIdx.y + blockDim.y * blockIdx.y;
-	int g = threadIdx.z + blockDim.z * blockIdx.z;
 
-	if (x < w && y < h && g < gc)
+	if (x < w && y < h)
 	{
-		// Calculate the indices for p1, p2, p3
-		int max_z = 3 * gc;
-		int idx_p1_z = 0 * g;
-		int idx_p2_z = 1 * g;
-		int idx_p3_z = 2 * g;
-		// create last index, that may only lie in the range of the p3 index, thus clamp manually
-		int idx_p3_z_1 = clamp(idx_p3_z - 1, 2 * gc, (3 * gc) - 1);
+		for (int g = gc; g > 0; g--)
+		{
+			// Calculate the indices for p1, p2, p3
+			int max_z = 3 * gc;
+			int idx_p1_z = 0 * gc + g;
+			int idx_p2_z = 1 * gc + g;
+			int idx_p3_z = 2 * gc + g;
+			// create last index, that may only lie in the range of the p3 index, thus clamp manually
+			int idx_p3_z_1 = clamp(idx_p3_z - 1, 2 * gc, (3 * gc) - 1);
 
-		float p1 = read_data(P, w, h, max_z, x, y, idx_p1_z);
-		float p2 = read_data(P, w, h, max_z, x, y, idx_p2_z);
-		float p3 = read_data(P, w, h, max_z, x, y, idx_p3_z);
+			float p1 = read_data(P, w, h, max_z, x, y, idx_p1_z);
+			float p2 = read_data(P, w, h, max_z, x, y, idx_p2_z);
+			float p3 = read_data(P, w, h, max_z, x, y, idx_p3_z);
 
-		// Divergence 3 is defined as the sum of backward differences
-		float div = p1 - read_data(P, w, h, max_z, x - 1, y, idx_p1_z) + p2
-				- read_data(P, w, h, max_z, x, y - 1, idx_p2_z) + p3
-				- read_data(P, w, h, max_z, x, y, idx_p3_z_1);
+			// Divergence 3 is defined as the sum of backward differences
+			float div = p1 - read_data(P, w, h, max_z, x - 1, y, idx_p1_z) + p2
+					- read_data(P, w, h, max_z, x, y - 1, idx_p2_z) + p3
+					- read_data(P, w, h, max_z, x, y, idx_p3_z_1);
 
-		write_data(Div3_P, div, w, h, x, y);
+			write_data(Div3_P, div, w, h, gc, x, y, g);
+		}
 	}
 }
 
@@ -286,11 +303,10 @@ __global__ void g_compute_g(float *Phi, float *G, int w, int h, int gamma_min,
 	int y = threadIdx.y + blockDim.y * blockIdx.y;
 
 	float gamma = gamma_min;
-	int gc = gamma_max - gamma_min;
+	int gc = gamma_max - gamma_min + 1;
 
 	for (int g = 0; g < gc; g++)
 	{
-		// TODO: maybe Phi(x, gamma) is {0, 1} not [0, 1] -> use mu to round
 		gamma += read_data(Phi, w, h, gc, x, y, g);
 	}
 
@@ -311,7 +327,7 @@ int main(int argc, char **argv)
 			max_iterations, argc, argv);
 
 	// define the range of gamma
-	int gc = gamma_max - gamma_min;
+	int gc = gamma_max - gamma_min + 1;
 
 	// image + 0 is left
 	string imageL = image + "0.png";
@@ -389,24 +405,25 @@ int main(int argc, char **argv)
 	cudaMemcpy(IR, imgInR, imgBytes, cudaMemcpyHostToDevice);
 	CUDA_CHECK;
 
-	int blockx = 128;
-	int blocky = 2;
-
 	// create kernel dimensions
-	dim3 block2D(blockx, blocky);
+	dim3 block2D(128, 1);
 	dim3 grid2D((w + block2D.x - 1) / block2D.x,
 			(h + block2D.y - 1) / block2D.y);
 
-	dim3 block3D(blockx, blocky, 1);
+	dim3 block3D(64, 2, 1);
 	dim3 grid3D((w + block3D.x - 1) / block3D.x,
 			(h + block3D.y - 1) / block3D.y, (gc + block3D.z - 1) / block3D.z);
 
+	dim3 block1D(256);
+	dim3 grid1DP((w * h * gc * 3 + block1D.x - 1) / block1D.x);
+	dim3 grid1DPhi((w * h * gc + block1D.x - 1) / block1D.x);
+
 	// Actual Algorithm
-	// Initialization of P and Phi
-	g_initialize_phi<<<grid3D, block3D>>>(Phi, w, h, gc, 0.5f);
+	// Initialization
+	g_initialize_p<<<grid1DP, block1D>>>(P, w, h, gc, 0.1f);
 	CUDA_CHECK;
 
-	g_initialize_p<<<grid3D, block3D>>>(P, w, h, gc, 0.5f);
+	g_initialize_phi<<<grid1DPhi, block1D>>>(Phi, w, h, gc, 0.1f);
 	CUDA_CHECK;
 
 	// Make sure the initial Phi fits constraints
@@ -414,7 +431,8 @@ int main(int argc, char **argv)
 	CUDA_CHECK;
 
 	// Make sure the initial P fits constraints
-	g_project_p_c<<<grid3D, block3D>>>(P, IL, IR, w, h, nc, gc, lambda, gamma_min);
+	g_project_p_c<<<grid3D, block3D>>>(P, IL, IR, w, h, nc, gc, lambda,
+			gamma_min);
 	CUDA_CHECK;
 
 	// Iterate until stopping criterion is reached
@@ -422,27 +440,28 @@ int main(int argc, char **argv)
 	while (1)
 	{
 		// Calculate the divergence of P for the update step of phi
-		g_div3<<<grid3D, block3D>>>(P, Div3_P, w, h, gc);
+		g_div3<<<grid2D, block2D>>>(P, Div3_P, w, h, gc);
 		CUDA_CHECK;
 
 		// Update the Phi
-		g_update_phi<<<grid3D, block3D>>>(Phi, Div3_P, w, h, gc, tau_p);
+		g_update_phi<<<grid2D, block2D>>>(Phi, Div3_P, w, h, gc, tau_p);
 		CUDA_CHECK;
 
 		// Make sure Phi is in the solution space (D)
-		g_project_phi_d<<<grid3D, block3D>>>(Phi, w, h, gc);
+		g_project_phi_d<<<grid2D, block2D>>>(Phi, w, h, gc);
 		CUDA_CHECK;
 
 		// Calculate the gradient in x, y, and gamma direction
-		g_grad3<<<grid3D, block3D>>>(Phi, Grad3_Phi, w, h, gc);
+		g_grad3<<<grid2D, block2D>>>(Phi, Grad3_Phi, w, h, gc);
 		CUDA_CHECK;
 
 		// Update the P
-		g_update_p<<<grid3D, block3D>>>(P, Grad3_Phi, w, h, gc, tau_d);
+		g_update_p<<<grid2D, block2D>>>(P, Grad3_Phi, w, h, gc, tau_d);
 		CUDA_CHECK;
 
 		// Make sure P is in solution space (C)
-		g_project_p_c<<<grid3D, block3D>>>(P, IL, IR, w, h, nc, gc, lambda, gamma_min);
+		g_project_p_c<<<grid2D, block2D>>>(P, IL, IR, w, h, nc, gc, lambda,
+				gamma_min);
 		CUDA_CHECK;
 
 		if (iterations > max_iterations)
@@ -452,15 +471,87 @@ int main(int argc, char **argv)
 	}
 
 	// Calculate the new G
-		g_compute_g<<<grid2D, block2D>>>(Phi, G, w, h, gamma_min, gamma_max);
+	g_compute_g<<<grid2D, block2D>>>(Phi, G, w, h, gamma_min, gamma_max);
 
+	/*
+	// Visualization only makes sense in that way if gamma = -1 .. 1
+	float * imDiv3 = new float[w * h * gc];
+	float * imGrad31 = new float[w * h * gc];
+	float * imGrad32 = new float[w * h * gc];
+	float * imGrad33 = new float[w * h * gc];
 
-	// Move disparities from device to host
-	cudaMemcpy(imgOut, Phi, gBytes, cudaMemcpyDeviceToHost);
+	cv::Mat mDiv3(h, w, CV_32FC3);
+	cv::Mat mGrad31(h, w, CV_32FC3);
+	cv::Mat mGrad32(h, w, CV_32FC3);
+	cv::Mat mGrad33(h, w, CV_32FC3);
+
+	cudaMemcpy(imDiv3, Div3_P, phiBytes, cudaMemcpyDeviceToHost);
 	CUDA_CHECK;
+	cudaMemcpy(imGrad31, &Grad3_Phi[0], phiBytes, cudaMemcpyDeviceToHost);
+	CUDA_CHECK;
+	cudaMemcpy(imGrad31, &Grad3_Phi[w * h * gc], phiBytes,
+			cudaMemcpyDeviceToHost);
+	CUDA_CHECK;
+	cudaMemcpy(imGrad31, &Grad3_Phi[2 * w * h * gc], phiBytes,
+			cudaMemcpyDeviceToHost);
+	CUDA_CHECK;
+
+	convert_layered_to_mat(mDiv3, imDiv3);
+	convert_layered_to_mat(mGrad31, imGrad31);
+	convert_layered_to_mat(mGrad32, imGrad32);
+	convert_layered_to_mat(mGrad33, imGrad33);
+
+	cv::normalize(mDiv3, mDiv3, 0.f, 1.f);
+	cv::normalize(mGrad31, mGrad31, 0.f, 1.f);
+	cv::normalize(mGrad32, mGrad32, 0.f, 1.f);
+	cv::normalize(mGrad33, mGrad33, 0.f, 1.f);
+
+	showImage("Div3", mDiv3, 100, 100 + h + 40);
+	showImage("Grad31", mGrad31, 400, 100 + h + 40);
+	showImage("Grad32", mGrad32, 700, 100 + h + 40);
+	showImage("Grad33", mGrad33, 1000, 100 + h + 40);
+
+	float * imPhi = new float[w * h * gc];
+	float * imP1 = new float[w * h * gc];
+	float * imP2 = new float[w * h * gc];
+	float * imP3 = new float[w * h * gc];
+
+	cv::Mat mPhi(h, w, CV_32FC3);
+	cv::Mat mP1(h, w, CV_32FC3);
+	cv::Mat mP2(h, w, CV_32FC3);
+	cv::Mat mP3(h, w, CV_32FC3);
+
+	cudaMemcpy(imPhi, IL, phiBytes, cudaMemcpyDeviceToHost);
+	CUDA_CHECK;
+	cudaMemcpy(imP1, &P[0], phiBytes, cudaMemcpyDeviceToHost);
+	CUDA_CHECK;
+	cudaMemcpy(imP1, &P[w * h * gc], phiBytes, cudaMemcpyDeviceToHost);
+	CUDA_CHECK;
+	cudaMemcpy(imP1, &P[2 * w * h * gc], phiBytes, cudaMemcpyDeviceToHost);
+	CUDA_CHECK;
+
+	convert_layered_to_mat(mPhi, imPhi);
+	convert_layered_to_mat(mP1, imP1);
+	convert_layered_to_mat(mP2, imP2);
+	convert_layered_to_mat(mP3, imP3);
+
+	cv::normalize(mPhi, mPhi, 0.f, 1.f);
+	cv::normalize(mP1, mP1, 0.f, 1.f);
+	cv::normalize(mP2, mP2, 0.f, 1.f);
+	cv::normalize(mP3, mP3, 0.f, 1.f);
+
+	showImage("Phi", mPhi, 1100, 100);
+	showImage("P1", mP1, 1400, 100);
+	showImage("P2", mP2, 1700, 100);
+	showImage("P3", mP3, 2000, 100);
+	*/
 
 	// show input image
 	showImage("Input", mInL, 100, 100); // show at position (x_from_left=100,y_from_above=100)
+
+	// Move disparities from device to host
+	cudaMemcpy(imgOut, G, gBytes, cudaMemcpyDeviceToHost);
+	CUDA_CHECK;
 
 	// show output image: first convert to interleaved opencv format from the layered raw array
 	convert_layered_to_mat(mOut, imgOut);
