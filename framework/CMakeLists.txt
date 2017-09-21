@@ -19,9 +19,9 @@ FIND_PACKAGE(OpenCV REQUIRED)
 SET(
 	CUDA_NVCC_FLAGS
 	${CUDA_NVCC_FLAGS};
-	#--debug; # Create debug information
-	#--device-debug; # Create debug information for device
-	--profile;
+	--debug; # Create debug information
+	--device-debug; # Create debug information for device
+	#--profile;
 	#-lineinfo; # Add line information 
 	-Wno-deprecated-gpu-targets; # Disable the warning
 	-rdc=true; # Allow relocation of device code -> CUDA_SEPARABLE_COMPILATION On
