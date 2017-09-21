@@ -86,13 +86,13 @@ void read_parameters(std::string &image, bool &gray, float &lambda,
 	gray = false;
 	getParam("gray", gray, argc, argv);
 
-	lambda = 0.5f;
+	lambda = 30.f;
 	getParam("lambda", lambda, argc, argv);
 
-	tau_p = 1.f/sqrt(3);
+	tau_p = 1.f/sqrtf(3.f);
 	getParam("tau_p", tau_p, argc, argv);
 
-	tau_d = 1.f/sqrt(3);
+	tau_d = 1.f/sqrtf(3.f);
 	getParam("tau_d", tau_d, argc, argv);
 
 	gamma_min = -4;
