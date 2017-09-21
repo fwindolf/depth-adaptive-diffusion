@@ -21,6 +21,6 @@ There also are some header files.
 ## Running
 Run `./depth-adaptive-diffusion` in the build folder to start the executable. This will print the possible commandline arguments when run without some.
 
-A sample call would be `./depth_adaptive_diffusion -i ../images/Bicycle1-perfect/im -iterations 1000`.
+A sample call would be `./depth_adaptive_diffusion -i ../images/Motorcycle-perfect/im -iterations 1000`.
 
 *NOTE: The implementation is currently flawed and doesn't do something yet!*
