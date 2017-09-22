@@ -38,8 +38,25 @@ INCLUDE_DIRECTORIES(
 	include/
 )
 
+# Debug target
+CUDA_ADD_EXECUTABLE(
+	debug
+	main.cu
+	${COMMON_SRC}
+	${IMAGE_SRC}
+)
 
-# Main target
+
+TARGET_LINK_LIBRARIES(debug ${OpenCV_LIBS})
+
+SET(
+	CUDA_NVCC_FLAGS
+	--profile;
+	-lineinfo; # Add line information 
+	-Wno-deprecated-gpu-targets; # Disable the warning
+	-rdc=true; # Allow relocation of device code -> CUDA_SEPARABLE_COMPILATION On
+)
+
 CUDA_ADD_EXECUTABLE(
 	depth_adaptive_diffusion
 	main.cu
