@@ -24,6 +24,31 @@ __device__ float rho(float *iL, float *iR, int nc, float lambda)
 	return sum * lambda;
 }
 
+__global__ void g_test_rho(float * IL, float * IR, float *IO, int w, int h,
+		int nc, int gc, int gamma_min, float lambda)
+{
+	int x = threadIdx.x + blockDim.x * blockIdx.x;
+	int y = threadIdx.y + blockDim.y * blockIdx.y;
+
+	if(x < w && y < h)
+	{
+		for (int g = 0; g < gc; g++)
+		{
+			float iL[3];
+			float iR[3];
+			// Save image data to temporary arrays
+			for (int c = 0; c < nc; c++)
+			{
+				iL[c] = read_data(IL, w, h, nc, x, y, c);
+				// Use the disparity value of this layer of P
+				// index of gamma runs from 0...gc, thus offset by gamma_min (eg. -16)
+				iR[c] = read_data(IR, w, h, nc, x + gamma_min + g, y, c);
+			}
+			write_data(IO, rho(iL, iR, nc, lambda), w, h, gc, x, y, g);
+		}
+	}
+}
+
 /**
  * Initialize Phi to value
  *
@@ -207,8 +232,6 @@ __global__ void g_update_phi(float *Phi, float *Div3_P, int w, int h, int gc,
  *
  * Grad3_Phi is the resulting w * h * gc * 3 with one channel for x, y and g direction
  */
-
-// TODO: is the layout (dx, dy, dg) with each d being w * h * gc?
 __global__ void g_grad3(float *Phi, float *Grad3_Phi, int w, int h, int gc)
 {
 	// Gradient 3 is defined via forward differences
@@ -337,15 +360,23 @@ int main(int argc, char **argv)
 	get_dimensions(mInL, mInR, w, h, nc);
 	cout << "Image Dimensions: " << w << " x " << h << " x " << nc << endl;
 
-	// Define output array, grayscale image of depth values
-	cv::Mat mOut(h, w, CV_32FC1);
+	if (nc != gc)
+	{
+		cerr << "ERROR: This test only works for gc = nc!" << endl;
+		exit(1);
+	}
+
+	// Define output array, 3x greyscale image of errors
+	cv::Mat mOut1(h, w, CV_32FC1);
+	cv::Mat mOut2(h, w, CV_32FC1);
+	cv::Mat mOut3(h, w, CV_32FC1);
 
 	// allocate raw input image array
 	float *imgInL = new float[(size_t) w * h * nc];
 	float *imgInR = new float[(size_t) w * h * nc];
 
 	// allocate raw output array (the computation result will be stored in this array, then later converted to mOut for displaying)
-	float *imgOut = new float[(size_t) w * h * mOut.channels()];
+	float *imgOut = new float[(size_t) w * h * nc];
 
 	// Init raw input image array
 	convert_mat_to_layered(imgInL, mInL);
@@ -353,14 +384,18 @@ int main(int argc, char **argv)
 
 	// Allocate memory on device for images
 	size_t imgBytes = w * h * nc * sizeof(float);
-	float *IL, *IR = NULL;
+	float *IL, *IR, *IO = NULL;
 	cudaMalloc(&IL, imgBytes);
 	CUDA_CHECK;
 	cudaMalloc(&IR, imgBytes);
 	CUDA_CHECK;
+	cudaMalloc(&IO, imgBytes);
+	CUDA_CHECK;
 	cudaMemset(IL, 0, imgBytes);
 	CUDA_CHECK;
 	cudaMemset(IR, 0, imgBytes);
+	CUDA_CHECK;
+	cudaMemset(IO, 0, imgBytes);
 	CUDA_CHECK;
 
 	// for P (3 channels for p1..3) and Phi vectors
@@ -413,140 +448,35 @@ int main(int argc, char **argv)
 	dim3 grid1DP((w * h * gc * 3 + block1D.x - 1) / block1D.x);
 	dim3 grid1DPhi((w * h * gc + block1D.x - 1) / block1D.x);
 
-	// Actual Algorithm
-	// Initialization works with 0s for P, only for Phi the first layer needs to be 1s
-	// Thus run the projection once
-	g_project_phi_d<<<grid3D, block3D>>>(Phi, w, h, gc);
+	// Test if rho works as intended, output an image with the errors in brightness
+	g_test_rho<<<grid2D, block2D>>>(IL, IR, IO, w, h, nc, gc, gamma_min,
+			lambda);
 	CUDA_CHECK;
-
-	// Iterate until stopping criterion is reached
-	int iterations = 0;
-	while (1)
-	{
-		// Reset gradient and divergence
-		cudaMemset(Grad3_Phi, 0, pBytes);
-		CUDA_CHECK;
-		cudaMemset(Div3_P, 0, phiBytes);
-		CUDA_CHECK;
-
-		// Calculate the divergence of P for the update step of phi
-		g_div3<<<grid2D, block2D>>>(P, Div3_P, w, h, gc);
-		CUDA_CHECK;
-
-		// Update the Phi
-		g_update_phi<<<grid2D, block2D>>>(Phi, Div3_P, w, h, gc, tau_p);
-		CUDA_CHECK;
-
-		// Make sure Phi is in the solution space (D)
-		g_project_phi_d<<<grid2D, block2D>>>(Phi, w, h, gc);
-		CUDA_CHECK;
-
-		// Calculate the gradient in x, y, and gamma direction
-		g_grad3<<<grid2D, block2D>>>(Phi, Grad3_Phi, w, h, gc);
-		CUDA_CHECK;
-
-		// Update the P
-		g_update_p<<<grid2D, block2D>>>(P, Grad3_Phi, w, h, gc, tau_d);
-		CUDA_CHECK;
-
-		// Make sure P is in solution space (C)
-		g_project_p_c<<<grid2D, block2D>>>(P, IL, IR, w, h, nc, gc, lambda,
-				gamma_min);
-		CUDA_CHECK;
-
-		if (iterations > max_iterations)
-			break;
-
-		iterations++;
-	}
-
-	// Calculate the new G
-	g_compute_g<<<grid2D, block2D>>>(Phi, G, w, h, gamma_min, gamma_max);
-
-	/*
-	 // Visualization only makes sense in that way if gamma = -1 .. 1
-	 float * imDiv3 = new float[w * h * gc];
-	 float * imGrad31 = new float[w * h * gc];
-	 float * imGrad32 = new float[w * h * gc];
-	 float * imGrad33 = new float[w * h * gc];
-
-	 cv::Mat mDiv3(h, w, CV_32FC3);
-	 cv::Mat mGrad31(h, w, CV_32FC3);
-	 cv::Mat mGrad32(h, w, CV_32FC3);
-	 cv::Mat mGrad33(h, w, CV_32FC3);
-
-	 cudaMemcpy(imDiv3, Div3_P, phiBytes, cudaMemcpyDeviceToHost);
-	 CUDA_CHECK;
-	 cudaMemcpy(imGrad31, &Grad3_Phi[0], phiBytes, cudaMemcpyDeviceToHost);
-	 CUDA_CHECK;
-	 cudaMemcpy(imGrad31, &Grad3_Phi[w * h * gc], phiBytes,
-	 cudaMemcpyDeviceToHost);
-	 CUDA_CHECK;
-	 cudaMemcpy(imGrad31, &Grad3_Phi[2 * w * h * gc], phiBytes,
-	 cudaMemcpyDeviceToHost);
-	 CUDA_CHECK;
-
-	 convert_layered_to_mat(mDiv3, imDiv3);
-	 convert_layered_to_mat(mGrad31, imGrad31);
-	 convert_layered_to_mat(mGrad32, imGrad32);
-	 convert_layered_to_mat(mGrad33, imGrad33);
-
-	 cv::normalize(mDiv3, mDiv3, 0.f, 1.f);
-	 cv::normalize(mGrad31, mGrad31, 0.f, 1.f);
-	 cv::normalize(mGrad32, mGrad32, 0.f, 1.f);
-	 cv::normalize(mGrad33, mGrad33, 0.f, 1.f);
-
-	 showImage("Div3", mDiv3, 100, 100 + h + 40);
-	 showImage("Grad31", mGrad31, 400, 100 + h + 40);
-	 showImage("Grad32", mGrad32, 700, 100 + h + 40);
-	 showImage("Grad33", mGrad33, 1000, 100 + h + 40);
-
-	 float * imPhi = new float[w * h * gc];
-	 float * imP1 = new float[w * h * gc];
-	 float * imP2 = new float[w * h * gc];
-	 float * imP3 = new float[w * h * gc];
-
-	 cv::Mat mPhi(h, w, CV_32FC3);
-	 cv::Mat mP1(h, w, CV_32FC3);
-	 cv::Mat mP2(h, w, CV_32FC3);
-	 cv::Mat mP3(h, w, CV_32FC3);
-
-	 cudaMemcpy(imPhi, IL, phiBytes, cudaMemcpyDeviceToHost);
-	 CUDA_CHECK;
-	 cudaMemcpy(imP1, &P[0], phiBytes, cudaMemcpyDeviceToHost);
-	 CUDA_CHECK;
-	 cudaMemcpy(imP1, &P[w * h * gc], phiBytes, cudaMemcpyDeviceToHost);
-	 CUDA_CHECK;
-	 cudaMemcpy(imP1, &P[2 * w * h * gc], phiBytes, cudaMemcpyDeviceToHost);
-	 CUDA_CHECK;
-
-	 convert_layered_to_mat(mPhi, imPhi);
-	 convert_layered_to_mat(mP1, imP1);
-	 convert_layered_to_mat(mP2, imP2);
-	 convert_layered_to_mat(mP3, imP3);
-
-	 cv::normalize(mPhi, mPhi, 0.f, 1.f);
-	 cv::normalize(mP1, mP1, 0.f, 1.f);
-	 cv::normalize(mP2, mP2, 0.f, 1.f);
-	 cv::normalize(mP3, mP3, 0.f, 1.f);
-
-	 showImage("Phi", mPhi, 1100, 100);
-	 showImage("P1", mP1, 1400, 100);
-	 showImage("P2", mP2, 1700, 100);
-	 showImage("P3", mP3, 2000, 100);
-	 */
 
 	// show input image
 	showImage("Input", mInL, 100, 100); // show at position (x_from_left=100,y_from_above=100)
 
-	// Move disparities from device to host
-	cudaMemcpy(imgOut, G, gBytes, cudaMemcpyDeviceToHost);
-	CUDA_CHECK;
+	size_t outBytes = w * h * sizeof(float);
 
-	// show output image: first convert to interleaved opencv format from the layered raw array
-	convert_layered_to_mat(mOut, imgOut);
-	// cv::normalize(mOut, mOut, 0, 1);
-	showImage("Output", mOut, 100 + w + 40, 100);
+	// Move disparities from device to host
+	cudaMemcpy(imgOut, IO, outBytes, cudaMemcpyDeviceToHost);
+	CUDA_CHECK;
+	convert_layered_to_mat(mOut1, imgOut);
+
+	cudaMemcpy(imgOut, &IO[w * h], outBytes, cudaMemcpyDeviceToHost);
+	CUDA_CHECK;
+	convert_layered_to_mat(mOut2, imgOut);
+
+	cudaMemcpy(imgOut, &IO[2 * w * h], outBytes, cudaMemcpyDeviceToHost);
+	CUDA_CHECK;
+	convert_layered_to_mat(mOut3, imgOut);
+
+	normalize(mOut1, mOut1, 0, 1, cv::NORM_MINMAX, CV_32FC1);
+	showImage("Output1", mOut1, 100 + w + 40, 100);
+	normalize(mOut2, mOut2, 0, 1, cv::NORM_MINMAX, CV_32FC1);
+	showImage("Output2", mOut2, 100 + w + 40, 100);
+	normalize(mOut3, mOut3, 0, 1, cv::NORM_MINMAX, CV_32FC1);
+	showImage("Output3", mOut3, 100 + w + 40, 100);
 
 	// free allocated arrays
 	delete[] imgInL;

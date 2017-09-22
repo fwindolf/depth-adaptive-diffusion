@@ -95,9 +95,9 @@ void read_parameters(std::string &image, bool &gray, float &lambda,
 	tau_d = 1.f/sqrtf(3.f);
 	getParam("tau_d", tau_d, argc, argv);
 
-	gamma_min = -4;
+	gamma_min = -1;
 	getParam("gamma_min", gamma_min, argc, argv);
-	gamma_max = 4;
+	gamma_max = 1;
 	getParam("gamma_max", gamma_max, argc, argv);
 	if (gamma_min >= gamma_max)
 	{
