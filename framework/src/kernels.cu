@@ -149,7 +149,8 @@ __global__ void g_grad3(float *Phi, float *Grad3_Phi, int w, int h, int gc)
 	if (x < w && y < h)
 	{
 		float next_g = read_data(Phi, w, h, gc, x, y, gc);
-		for (int g = gc; g > 0; g--)
+		// Run from gamma_max (gc - 1) to gamma_min (0)
+		for (int g = gc - 1; g >= 0; g--)
 		{
 			float phi = read_data(Phi, w, h, gc, x, y, g);
 			float dx = read_data(Phi, w, h, gc, x + 1, y, g) - phi;
