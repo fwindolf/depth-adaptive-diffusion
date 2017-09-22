@@ -30,7 +30,7 @@ SET(
 # message("CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS}")
 
 # Files for different exercises
-SET(COMMON_SRC src/util.cu src/usage.cu)
+SET(COMMON_SRC src/util.cu src/usage.cu src/kernels.cu)
 SET(IMAGE_SRC src/image.cu)
 
 # CUDA include directories
