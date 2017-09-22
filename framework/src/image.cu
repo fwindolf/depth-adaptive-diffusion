@@ -133,13 +133,13 @@ cv::Mat load_image(std::string image, bool gray)
 
 	float factor = 0.f;
 	// downsample if bigger than MAX_W or MAX_H
-	if(mIn.cols > MAX_W)
-		factor = (float)MAX_W / mIn.cols;
+	if (mIn.cols > MAX_W)
+		factor = (float) MAX_W / mIn.cols;
 
-	if(mIn.rows > MAX_H)
-		factor = min((float)MAX_H / mIn.rows, factor);
+	if (mIn.rows > MAX_H)
+		factor = min((float) MAX_H / mIn.rows, factor);
 
-	if(factor > 0)
+	if (factor > 0)
 		cv::resize(mIn, mIn, cv::Size(), factor, factor, cv::INTER_AREA);
 
 	return mIn;
@@ -159,5 +159,11 @@ void get_dimensions(const cv::Mat &m1, const cv::Mat &m2, int &w, int &h,
 		exit(1);
 	}
 
+}
+
+void save_image(string image_name, cv::Mat &mOut)
+{
+	// save input and result
+	cv::imwrite(image_name + ".png", mOut * 255.f);
 }
 

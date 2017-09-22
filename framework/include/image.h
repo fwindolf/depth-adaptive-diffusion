@@ -45,6 +45,11 @@ cv::Mat load_image(std::string image, bool gray);
 void get_dimensions(const cv::Mat &m1, const cv::Mat &m2, int &w, int &h,
 		int &nc);
 
+/**
+ * Save the image as png
+ */
+void save_image(std::string image_name, cv::Mat &mOut);
+
 #endif //IMAGE_H
 
 

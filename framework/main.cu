@@ -242,13 +242,15 @@ int main(int argc, char **argv)
 
 	// show output image: first convert to interleaved opencv format from the layered raw array
 	convert_layered_to_mat(mOut, imgOut);
-	// cv::normalize(mOut, mOut, 0, 1);
+	normalize(mOut, mOut, 0.f, 1.f, cv::NORM_MINMAX, CV_32FC1);
 	showImage("Output", mOut, 100 + w + 40, 100);
 
 	// free allocated arrays
 	delete[] imgInL;
 	delete[] imgInR;
 	delete[] imgOut;
+
+	save_image("out", mOut);
 
 	// wait for key inputs
 	cv::waitKey(0);
