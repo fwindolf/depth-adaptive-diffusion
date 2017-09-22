@@ -2,6 +2,7 @@
 #include "usage.h"
 #include "image.h"
 #include <iostream>
+#include <vector>
 using namespace std;
 
 /**
@@ -360,17 +361,6 @@ int main(int argc, char **argv)
 	get_dimensions(mInL, mInR, w, h, nc);
 	cout << "Image Dimensions: " << w << " x " << h << " x " << nc << endl;
 
-	if (nc != gc)
-	{
-		cerr << "ERROR: This test only works for gc = nc!" << endl;
-		exit(1);
-	}
-
-	// Define output array, 3x greyscale image of errors
-	cv::Mat mOut1(h, w, CV_32FC1);
-	cv::Mat mOut2(h, w, CV_32FC1);
-	cv::Mat mOut3(h, w, CV_32FC1);
-
 	// allocate raw input image array
 	float *imgInL = new float[(size_t) w * h * nc];
 	float *imgInR = new float[(size_t) w * h * nc];
@@ -384,18 +374,19 @@ int main(int argc, char **argv)
 
 	// Allocate memory on device for images
 	size_t imgBytes = w * h * nc * sizeof(float);
+	size_t outBytes = w * h * gc * sizeof(float);
 	float *IL, *IR, *IO = NULL;
 	cudaMalloc(&IL, imgBytes);
 	CUDA_CHECK;
 	cudaMalloc(&IR, imgBytes);
 	CUDA_CHECK;
-	cudaMalloc(&IO, imgBytes);
+	cudaMalloc(&IO, outBytes);
 	CUDA_CHECK;
 	cudaMemset(IL, 0, imgBytes);
 	CUDA_CHECK;
 	cudaMemset(IR, 0, imgBytes);
 	CUDA_CHECK;
-	cudaMemset(IO, 0, imgBytes);
+	cudaMemset(IO, 0, outBytes);
 	CUDA_CHECK;
 
 	// for P (3 channels for p1..3) and Phi vectors
@@ -456,27 +447,20 @@ int main(int argc, char **argv)
 	// show input image
 	showImage("Input", mInL, 100, 100); // show at position (x_from_left=100,y_from_above=100)
 
-	size_t outBytes = w * h * sizeof(float);
-
-	// Move disparities from device to host
-	cudaMemcpy(imgOut, IO, outBytes, cudaMemcpyDeviceToHost);
-	CUDA_CHECK;
-	convert_layered_to_mat(mOut1, imgOut);
-
-	cudaMemcpy(imgOut, &IO[w * h], outBytes, cudaMemcpyDeviceToHost);
-	CUDA_CHECK;
-	convert_layered_to_mat(mOut2, imgOut);
-
-	cudaMemcpy(imgOut, &IO[2 * w * h], outBytes, cudaMemcpyDeviceToHost);
-	CUDA_CHECK;
-	convert_layered_to_mat(mOut3, imgOut);
-
-	normalize(mOut1, mOut1, 0, 1, cv::NORM_MINMAX, CV_32FC1);
-	showImage("Output1", mOut1, 100 + w + 40, 100);
-	normalize(mOut2, mOut2, 0, 1, cv::NORM_MINMAX, CV_32FC1);
-	showImage("Output2", mOut2, 100 + w + 40, 100);
-	normalize(mOut3, mOut3, 0, 1, cv::NORM_MINMAX, CV_32FC1);
-	showImage("Output3", mOut3, 100 + w + 40, 100);
+	size_t nBytes = w * h * sizeof(float);
+	std::vector<cv::Mat *> mOuts;
+	for (int g = 0; g < gc; g++)
+	{
+		cv::Mat *tmp = new cv::Mat(h, w, CV_32FC1);
+		cudaMemcpy(imgOut, &IO[g * w * h], nBytes, cudaMemcpyDeviceToHost);
+		CUDA_CHECK;
+		convert_layered_to_mat(*tmp, imgOut);
+		normalize(*tmp, *tmp, 0, 1, cv::NORM_MINMAX, CV_32FC1);
+		std::stringstream ss;
+		ss << "Output" << g;
+		showImage(ss.str(), *tmp, 100 * g, 100);
+		mOuts.push_back(tmp);
+	}
 
 	// free allocated arrays
 	delete[] imgInL;
