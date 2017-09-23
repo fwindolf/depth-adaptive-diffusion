@@ -221,8 +221,21 @@ __global__ void g_compute_g(float *Phi, float *G, int w, int h, int gamma_min,
 
 	for (int g = 0; g < gc; g++)
 	{
-		gamma += read_data(Phi, w, h, gc, x, y, g);
+		// use mu = 0.5 aka round to nearest integer value
+		gamma += roundf(read_data(Phi, w, h, gc, x, y, g));
 	}
 
 	write_data(G, gamma, w, h, x, y);
+}
+
+__global__ void g_squared_err_g(float *G, float *G_last, int w, int h, float *err)
+{
+	int x = threadIdx.x + blockDim.x * blockIdx.x;
+	int y = threadIdx.y + blockDim.y * blockIdx.y;
+
+	if(x < w && y < h)
+	{
+		float e = read_data(G, w, h, x, y) - read_data(G_last, w, h, x, y);
+		atomicAdd(err, square(e));
+	}
 }

@@ -86,10 +86,21 @@ int main(int argc, char **argv)
 
 	// for the final depth values
 	size_t gBytes = w * h * sizeof(float);
-	float * G = NULL;
+	float * G, *G_last = NULL;
 	cudaMalloc(&G, gBytes);
 	CUDA_CHECK;
 	cudaMemset(G, 0, gBytes);
+	CUDA_CHECK;
+	cudaMalloc(&G_last, gBytes);
+	CUDA_CHECK;
+	cudaMemset(G_last, 0, gBytes);
+	CUDA_CHECK;
+
+	float * err = NULL;
+	cudaMalloc(&err, sizeof(float));
+	CUDA_CHECK;
+	cudaMemset(err, 0, sizeof(float));
+	CUDA_CHECK;
 
 	// copy data to device
 	cudaMemcpy(IL, imgInL, imgBytes, cudaMemcpyHostToDevice);
@@ -154,84 +165,109 @@ int main(int argc, char **argv)
 		if (iterations > max_iterations)
 			break;
 
+		// check convergence
+		if (iterations % 1000 == 0)
+		{
+			// Save G of last convergence check
+			cudaMemcpy(G_last, G, gBytes, cudaMemcpyDeviceToDevice);
+			CUDA_CHECK;
+
+			// Calculate the new G
+			g_compute_g<<<grid2D, block2D>>>(Phi, G, w, h, gamma_min,
+					gamma_max);
+			CUDA_CHECK;
+
+			cudaMemset(err, 0, sizeof(float));
+			CUDA_CHECK;
+
+			g_squared_err_g<<<grid2D, block2D>>>(G, G_last, w, h, err);
+			CUDA_CHECK;
+
+			float err_host = 0.f;
+			cudaMemcpy(&err_host, err, sizeof(float), cudaMemcpyDeviceToHost);
+			CUDA_CHECK;
+
+			cout << iterations << ": Error is " << err_host << endl;
+
+			if(sqrt(err_host) < 0.01 || iterations > max_iterations)
+				break;
+		}
+
 		iterations++;
 	}
 
-	// Calculate the new G
-	g_compute_g<<<grid2D, block2D>>>(Phi, G, w, h, gamma_min, gamma_max);
-
 	/*
-	// Visualization only makes sense in that way if gamma = -1 .. 1
-	float * imDiv3 = new float[w * h * gc];
-	float * imGrad31 = new float[w * h * gc];
-	float * imGrad32 = new float[w * h * gc];
-	float * imGrad33 = new float[w * h * gc];
+	 // Visualization only makes sense in that way if gamma = -1 .. 1
+	 float * imDiv3 = new float[w * h * gc];
+	 float * imGrad31 = new float[w * h * gc];
+	 float * imGrad32 = new float[w * h * gc];
+	 float * imGrad33 = new float[w * h * gc];
 
-	cv::Mat mDiv3(h, w, CV_32FC3);
-	cv::Mat mGrad31(h, w, CV_32FC3);
-	cv::Mat mGrad32(h, w, CV_32FC3);
-	cv::Mat mGrad33(h, w, CV_32FC3);
+	 cv::Mat mDiv3(h, w, CV_32FC3);
+	 cv::Mat mGrad31(h, w, CV_32FC3);
+	 cv::Mat mGrad32(h, w, CV_32FC3);
+	 cv::Mat mGrad33(h, w, CV_32FC3);
 
-	cudaMemcpy(imDiv3, Div3_P, phiBytes, cudaMemcpyDeviceToHost);
-	CUDA_CHECK;
-	cudaMemcpy(imGrad31, &Grad3_Phi[0], phiBytes, cudaMemcpyDeviceToHost);
-	CUDA_CHECK;
-	cudaMemcpy(imGrad31, &Grad3_Phi[w * h * gc], phiBytes,
-			cudaMemcpyDeviceToHost);
-	CUDA_CHECK;
-	cudaMemcpy(imGrad31, &Grad3_Phi[2 * w * h * gc], phiBytes,
-			cudaMemcpyDeviceToHost);
-	CUDA_CHECK;
+	 cudaMemcpy(imDiv3, Div3_P, phiBytes, cudaMemcpyDeviceToHost);
+	 CUDA_CHECK;
+	 cudaMemcpy(imGrad31, &Grad3_Phi[0], phiBytes, cudaMemcpyDeviceToHost);
+	 CUDA_CHECK;
+	 cudaMemcpy(imGrad31, &Grad3_Phi[w * h * gc], phiBytes,
+	 cudaMemcpyDeviceToHost);
+	 CUDA_CHECK;
+	 cudaMemcpy(imGrad31, &Grad3_Phi[2 * w * h * gc], phiBytes,
+	 cudaMemcpyDeviceToHost);
+	 CUDA_CHECK;
 
-	convert_layered_to_mat(mDiv3, imDiv3);
-	convert_layered_to_mat(mGrad31, imGrad31);
-	convert_layered_to_mat(mGrad32, imGrad32);
-	convert_layered_to_mat(mGrad33, imGrad33);
+	 convert_layered_to_mat(mDiv3, imDiv3);
+	 convert_layered_to_mat(mGrad31, imGrad31);
+	 convert_layered_to_mat(mGrad32, imGrad32);
+	 convert_layered_to_mat(mGrad33, imGrad33);
 
-	normalize(mDiv3, mDiv3, 0.f, 1.f, cv::NORM_MINMAX, CV_32FC1);
-	normalize(mGrad31, mGrad31, 0.f, 1.f, cv::NORM_MINMAX, CV_32FC1);
-	normalize(mGrad32, mGrad32, 0.f, 1.f, cv::NORM_MINMAX, CV_32FC1);
-	normalize(mGrad33, mGrad33, 0.f, 1.f, cv::NORM_MINMAX, CV_32FC1);
+	 normalize(mDiv3, mDiv3, 0.f, 1.f, cv::NORM_MINMAX, CV_32FC1);
+	 normalize(mGrad31, mGrad31, 0.f, 1.f, cv::NORM_MINMAX, CV_32FC1);
+	 normalize(mGrad32, mGrad32, 0.f, 1.f, cv::NORM_MINMAX, CV_32FC1);
+	 normalize(mGrad33, mGrad33, 0.f, 1.f, cv::NORM_MINMAX, CV_32FC1);
 
-	showImage("Div3", mDiv3, 100, 100 + h + 40);
-	showImage("Grad31", mGrad31, 400, 100 + h + 40);
-	showImage("Grad32", mGrad32, 700, 100 + h + 40);
-	showImage("Grad33", mGrad33, 1000, 100 + h + 40);
+	 showImage("Div3", mDiv3, 100, 100 + h + 40);
+	 showImage("Grad31", mGrad31, 400, 100 + h + 40);
+	 showImage("Grad32", mGrad32, 700, 100 + h + 40);
+	 showImage("Grad33", mGrad33, 1000, 100 + h + 40);
 
-	float * imPhi = new float[w * h * gc];
-	float * imP1 = new float[w * h * gc];
-	float * imP2 = new float[w * h * gc];
-	float * imP3 = new float[w * h * gc];
+	 float * imPhi = new float[w * h * gc];
+	 float * imP1 = new float[w * h * gc];
+	 float * imP2 = new float[w * h * gc];
+	 float * imP3 = new float[w * h * gc];
 
-	cv::Mat mPhi(h, w, CV_32FC3);
-	cv::Mat mP1(h, w, CV_32FC3);
-	cv::Mat mP2(h, w, CV_32FC3);
-	cv::Mat mP3(h, w, CV_32FC3);
+	 cv::Mat mPhi(h, w, CV_32FC3);
+	 cv::Mat mP1(h, w, CV_32FC3);
+	 cv::Mat mP2(h, w, CV_32FC3);
+	 cv::Mat mP3(h, w, CV_32FC3);
 
-	cudaMemcpy(imPhi, Phi, phiBytes, cudaMemcpyDeviceToHost);
-	CUDA_CHECK;
-	cudaMemcpy(imP1, &P[0], phiBytes, cudaMemcpyDeviceToHost);
-	CUDA_CHECK;
-	cudaMemcpy(imP1, &P[w * h * gc], phiBytes, cudaMemcpyDeviceToHost);
-	CUDA_CHECK;
-	cudaMemcpy(imP1, &P[2 * w * h * gc], phiBytes, cudaMemcpyDeviceToHost);
-	CUDA_CHECK;
+	 cudaMemcpy(imPhi, Phi, phiBytes, cudaMemcpyDeviceToHost);
+	 CUDA_CHECK;
+	 cudaMemcpy(imP1, &P[0], phiBytes, cudaMemcpyDeviceToHost);
+	 CUDA_CHECK;
+	 cudaMemcpy(imP1, &P[w * h * gc], phiBytes, cudaMemcpyDeviceToHost);
+	 CUDA_CHECK;
+	 cudaMemcpy(imP1, &P[2 * w * h * gc], phiBytes, cudaMemcpyDeviceToHost);
+	 CUDA_CHECK;
 
-	convert_layered_to_mat(mPhi, imPhi);
-	convert_layered_to_mat(mP1, imP1);
-	convert_layered_to_mat(mP2, imP2);
-	convert_layered_to_mat(mP3, imP3);
+	 convert_layered_to_mat(mPhi, imPhi);
+	 convert_layered_to_mat(mP1, imP1);
+	 convert_layered_to_mat(mP2, imP2);
+	 convert_layered_to_mat(mP3, imP3);
 
-	normalize(mPhi, mPhi, 0.f, 1.f, cv::NORM_MINMAX, CV_32FC1);
-	normalize(mP1, mP1, 0.f, 1.f, cv::NORM_MINMAX, CV_32FC1);
-	normalize(mP2, mP2, 0.f, 1.f, cv::NORM_MINMAX, CV_32FC1);
-	normalize(mP3, mP3, 0.f, 1.f, cv::NORM_MINMAX, CV_32FC1);
+	 normalize(mPhi, mPhi, 0.f, 1.f, cv::NORM_MINMAX, CV_32FC1);
+	 normalize(mP1, mP1, 0.f, 1.f, cv::NORM_MINMAX, CV_32FC1);
+	 normalize(mP2, mP2, 0.f, 1.f, cv::NORM_MINMAX, CV_32FC1);
+	 normalize(mP3, mP3, 0.f, 1.f, cv::NORM_MINMAX, CV_32FC1);
 
-	showImage("Phi", mPhi, 1100, 100);
-	showImage("P1", mP1, 1400, 100);
-	showImage("P2", mP2, 1700, 100);
-	showImage("P3", mP3, 2000, 100);
-	*/
+	 showImage("Phi", mPhi, 1100, 100);
+	 showImage("P1", mP1, 1400, 100);
+	 showImage("P2", mP2, 1700, 100);
+	 showImage("P3", mP3, 2000, 100);
+	 */
 
 	// show input image
 	showImage("Input", mInL, 100, 100); // show at position (x_from_left=100,y_from_above=100)

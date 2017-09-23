@@ -4,8 +4,8 @@
 
 using namespace std;
 
-#define MAX_W 800
-#define MAX_H 600
+#define MAX_W 1024
+#define MAX_H 768
 
 // opencv helpers
 void convert_layered_to_interleaved(float *aOut, const float *aIn, int w, int h,
