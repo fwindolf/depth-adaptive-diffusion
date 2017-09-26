@@ -64,9 +64,8 @@ void print_usage()
 	std::cout << std::endl;
 }
 
-void read_parameters(std::string &image, bool &gray, float &lambda,
-		float &tau_p, float &tau_d, int &gamma_min, int &gamma_max,
-		int &iterations, int argc, char **argv)
+// TODO: update readme with usage
+void read_parameters(config &conf, int argc, char **argv)
 {
 	// Check if there are arguments
 	if (argc <= 1)
@@ -74,37 +73,44 @@ void read_parameters(std::string &image, bool &gray, float &lambda,
 		print_usage();
 	}
 
+	// Set defaults
+	conf.gray = false;
+	conf.disparities_from_file = false;
+	conf.lambda = 30.f;
+	conf.tau_p = 1.f/sqrtf(3.f);
+	conf.tau_d = 1.f/sqrtf(3.f);
+	conf.gamma_min = -4;
+	conf.gamma_max = 4;
+	conf.max_iterations = 1000;
+
 	// Process input image
-	image = "";
-	bool ret = getParam("i", image, argc, argv);
+	bool ret = getParam("image", conf.image, argc, argv);
 	if (!ret)
 	{
 		std::cerr << "ERROR: no image specified" << std::endl;
 		exit(1);
 	}
 
-	gray = false;
-	getParam("gray", gray, argc, argv);
+	conf.disparities_from_file = getParam("disparities", conf.disparities, argc, argv);
 
-	lambda = 30.f;
-	getParam("lambda", lambda, argc, argv);
 
-	tau_p = 1.f/sqrtf(3.f);
-	getParam("tau_p", tau_p, argc, argv);
+	getParam("gray", conf.gray, argc, argv);
 
-	tau_d = 1.f/sqrtf(3.f);
-	getParam("tau_d", tau_d, argc, argv);
+	getParam("lambda", conf.lambda, argc, argv);
 
-	gamma_min = -4;
-	getParam("gamma_min", gamma_min, argc, argv);
-	gamma_max = 4;
-	getParam("gamma_max", gamma_max, argc, argv);
-	if (gamma_min >= gamma_max)
+	getParam("tau_p", conf.tau_p, argc, argv);
+
+	getParam("tau_d", conf.tau_d, argc, argv);
+
+	getParam("gamma_min", conf.gamma_min, argc, argv);
+
+	getParam("gamma_max", conf.gamma_max, argc, argv);
+
+	if (conf.gamma_min >= conf.gamma_max)
 	{
 		std::cerr << "ERROR: invalid disparity range" << std::endl;
 		exit(1);
 	}
 
-	iterations = 100;
-	getParam("iterations", iterations, argc, argv);
+	getParam("max_iterations", conf.max_iterations, argc, argv);
 }
