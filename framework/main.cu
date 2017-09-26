@@ -5,29 +5,18 @@
 #include <iostream>
 using namespace std;
 
-int main(int argc, char **argv)
+cv::Mat calculate_disparities(const config c)
 {
-	init_device();
-
-	// Define parameters
-	string image;
-	bool gray;
-	float lambda, tau_p, tau_d;
-	int gamma_min, gamma_max, max_iterations;
-
-	read_parameters(image, gray, lambda, tau_p, tau_d, gamma_min, gamma_max,
-			max_iterations, argc, argv);
-
 	// define the range of gamma
-	int gc = gamma_max - gamma_min + 1;
+	int gc = c.gamma_max - c.gamma_min + 1;
 
 	// image + 0 is left
-	string imageL = image + "0.png";
+	string imageL = c.image + "0.png";
 	// image + 1 is right
-	string imageR = image + "1.png";
+	string imageR = c.image + "1.png";
 
-	cv::Mat mInL = load_image(imageL, gray);
-	cv::Mat mInR = load_image(imageR, gray);
+	cv::Mat mInL = load_image(imageL, c.gray);
+	cv::Mat mInR = load_image(imageR, c.gray);
 
 	// Width, height and channels of image
 	int w, h, nc;
@@ -142,7 +131,7 @@ int main(int argc, char **argv)
 		CUDA_CHECK;
 
 		// Update the Phi
-		g_update_phi<<<grid2D, block2D>>>(Phi, Div3_P, w, h, gc, tau_p);
+		g_update_phi<<<grid2D, block2D>>>(Phi, Div3_P, w, h, gc, c.tau_p);
 		CUDA_CHECK;
 
 		// Make sure Phi is in the solution space (D)
@@ -154,17 +143,18 @@ int main(int argc, char **argv)
 		CUDA_CHECK;
 
 		// Update the P
-		g_update_p<<<grid2D, block2D>>>(P, Grad3_Phi, w, h, gc, tau_d);
+		g_update_p<<<grid2D, block2D>>>(P, Grad3_Phi, w, h, gc, c.tau_d);
 		CUDA_CHECK;
 
 		// Make sure P is in solution space (C)
-		g_project_p_c<<<grid2D, block2D>>>(P, IL, IR, w, h, nc, gc, lambda,
-				gamma_min);
+		g_project_p_c<<<grid2D, block2D>>>(P, IL, IR, w, h, nc, gc, c.lambda,
+				c.gamma_min);
 		CUDA_CHECK;
 
-		if (iterations > max_iterations)
+		if (iterations > c.max_iterations)
 			break;
 
+		// TODO: convergence check via energy that is minimized, not via change of g
 		// check convergence
 		if (iterations % 1000 == 0)
 		{
@@ -173,8 +163,8 @@ int main(int argc, char **argv)
 			CUDA_CHECK;
 
 			// Calculate the new G
-			g_compute_g<<<grid2D, block2D>>>(Phi, G, w, h, gamma_min,
-					gamma_max);
+			g_compute_g<<<grid2D, block2D>>>(Phi, G, w, h, c.gamma_min,
+					c.gamma_max);
 			CUDA_CHECK;
 
 			cudaMemset(err, 0, sizeof(float));
@@ -189,88 +179,12 @@ int main(int argc, char **argv)
 
 			cout << iterations << ": Error is " << err_host << endl;
 
-			if(sqrt(err_host) < 0.01 || iterations > max_iterations)
+			if (sqrt(err_host) < 0.01 || iterations > c.max_iterations)
 				break;
 		}
 
 		iterations++;
 	}
-
-	/*
-	 // Visualization only makes sense in that way if gamma = -1 .. 1
-	 float * imDiv3 = new float[w * h * gc];
-	 float * imGrad31 = new float[w * h * gc];
-	 float * imGrad32 = new float[w * h * gc];
-	 float * imGrad33 = new float[w * h * gc];
-
-	 cv::Mat mDiv3(h, w, CV_32FC3);
-	 cv::Mat mGrad31(h, w, CV_32FC3);
-	 cv::Mat mGrad32(h, w, CV_32FC3);
-	 cv::Mat mGrad33(h, w, CV_32FC3);
-
-	 cudaMemcpy(imDiv3, Div3_P, phiBytes, cudaMemcpyDeviceToHost);
-	 CUDA_CHECK;
-	 cudaMemcpy(imGrad31, &Grad3_Phi[0], phiBytes, cudaMemcpyDeviceToHost);
-	 CUDA_CHECK;
-	 cudaMemcpy(imGrad31, &Grad3_Phi[w * h * gc], phiBytes,
-	 cudaMemcpyDeviceToHost);
-	 CUDA_CHECK;
-	 cudaMemcpy(imGrad31, &Grad3_Phi[2 * w * h * gc], phiBytes,
-	 cudaMemcpyDeviceToHost);
-	 CUDA_CHECK;
-
-	 convert_layered_to_mat(mDiv3, imDiv3);
-	 convert_layered_to_mat(mGrad31, imGrad31);
-	 convert_layered_to_mat(mGrad32, imGrad32);
-	 convert_layered_to_mat(mGrad33, imGrad33);
-
-	 normalize(mDiv3, mDiv3, 0.f, 1.f, cv::NORM_MINMAX, CV_32FC1);
-	 normalize(mGrad31, mGrad31, 0.f, 1.f, cv::NORM_MINMAX, CV_32FC1);
-	 normalize(mGrad32, mGrad32, 0.f, 1.f, cv::NORM_MINMAX, CV_32FC1);
-	 normalize(mGrad33, mGrad33, 0.f, 1.f, cv::NORM_MINMAX, CV_32FC1);
-
-	 showImage("Div3", mDiv3, 100, 100 + h + 40);
-	 showImage("Grad31", mGrad31, 400, 100 + h + 40);
-	 showImage("Grad32", mGrad32, 700, 100 + h + 40);
-	 showImage("Grad33", mGrad33, 1000, 100 + h + 40);
-
-	 float * imPhi = new float[w * h * gc];
-	 float * imP1 = new float[w * h * gc];
-	 float * imP2 = new float[w * h * gc];
-	 float * imP3 = new float[w * h * gc];
-
-	 cv::Mat mPhi(h, w, CV_32FC3);
-	 cv::Mat mP1(h, w, CV_32FC3);
-	 cv::Mat mP2(h, w, CV_32FC3);
-	 cv::Mat mP3(h, w, CV_32FC3);
-
-	 cudaMemcpy(imPhi, Phi, phiBytes, cudaMemcpyDeviceToHost);
-	 CUDA_CHECK;
-	 cudaMemcpy(imP1, &P[0], phiBytes, cudaMemcpyDeviceToHost);
-	 CUDA_CHECK;
-	 cudaMemcpy(imP1, &P[w * h * gc], phiBytes, cudaMemcpyDeviceToHost);
-	 CUDA_CHECK;
-	 cudaMemcpy(imP1, &P[2 * w * h * gc], phiBytes, cudaMemcpyDeviceToHost);
-	 CUDA_CHECK;
-
-	 convert_layered_to_mat(mPhi, imPhi);
-	 convert_layered_to_mat(mP1, imP1);
-	 convert_layered_to_mat(mP2, imP2);
-	 convert_layered_to_mat(mP3, imP3);
-
-	 normalize(mPhi, mPhi, 0.f, 1.f, cv::NORM_MINMAX, CV_32FC1);
-	 normalize(mP1, mP1, 0.f, 1.f, cv::NORM_MINMAX, CV_32FC1);
-	 normalize(mP2, mP2, 0.f, 1.f, cv::NORM_MINMAX, CV_32FC1);
-	 normalize(mP3, mP3, 0.f, 1.f, cv::NORM_MINMAX, CV_32FC1);
-
-	 showImage("Phi", mPhi, 1100, 100);
-	 showImage("P1", mP1, 1400, 100);
-	 showImage("P2", mP2, 1700, 100);
-	 showImage("P3", mP3, 2000, 100);
-	 */
-
-	// show input image
-	showImage("Input", mInL, 100, 100); // show at position (x_from_left=100,y_from_above=100)
 
 	// Move disparities from device to host
 	cudaMemcpy(imgOut, G, gBytes, cudaMemcpyDeviceToHost);
@@ -278,15 +192,74 @@ int main(int argc, char **argv)
 
 	// show output image: first convert to interleaved opencv format from the layered raw array
 	convert_layered_to_mat(mOut, imgOut);
-	normalize(mOut, mOut, 0.f, 1.f, cv::NORM_MINMAX, CV_32FC1);
-	showImage("Output", mOut, 100 + w + 40, 100);
 
 	// free allocated arrays
 	delete[] imgInL;
 	delete[] imgInR;
 	delete[] imgOut;
 
-	save_image("out", mOut);
+	cudaFree(IL);
+	CUDA_CHECK;
+	cudaFree(IR);
+	CUDA_CHECK;
+	cudaFree(P);
+	CUDA_CHECK;
+	cudaFree(Phi);
+	CUDA_CHECK;
+	cudaFree(Grad3_Phi);
+	CUDA_CHECK;
+	cudaFree(Div3_P);
+	CUDA_CHECK;
+	cudaFree(G);
+	CUDA_CHECK;
+	cudaFree(G_last);
+	CUDA_CHECK;
+	cudaFree(err);
+	CUDA_CHECK;
+
+	return mOut;
+}
+
+cv::Mat adaptive_diffusion(const cv::Mat mDisparities, const config c)
+{
+	cv::Mat mDiffused;
+
+
+
+	return mDiffused;
+}
+
+int main(int argc, char **argv)
+{
+	init_device();
+
+	// Create empty config
+	config c;
+
+	read_parameters(c, argc, argv);
+
+	// Load input images
+	std::string imageL = c.image + "0.png",
+				imageR = c.image + "1.png";
+
+	cv::Mat mInL = load_image(imageL, c.gray);
+	cv::Mat mInR = load_image(imageR, c.gray);
+
+	// Get disparities from dataset or calculate
+	cv::Mat mDisparities;
+	if (c.disparities_from_file)
+	{
+		mDisparities = load_pfm(c.disparities);
+	}
+	else
+	{
+		mDisparities = calculate_disparities(c);
+	}
+
+
+	showImage("Input", mInL, 100, 100);
+	// normalize(mDisparities, mDisparities, 0.f, 1.f, cv::NORM_MINMAX, CV_32FC1);
+	showImage("Disparities", mDisparities, 500, 100);
 
 	// wait for key inputs
 	cv::waitKey(0);
