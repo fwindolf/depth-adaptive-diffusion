@@ -35,7 +35,14 @@ void addNoise(cv::Mat &m, float sigma);
 /**
  * Read an input image
  */
-cv::Mat load_image(std::string image, bool gray);
+cv::Mat load_image(const std::string image, bool gray);
+
+/**
+ * Read an input image that is a pfm file
+ *
+ * adapted from github.com/antoinetlc/PFM_ReadWrite
+ */
+cv::Mat load_pfm(const std::string image);
 
 /**
  * Save the dimensions of the images to w, h, and nc
@@ -49,6 +56,9 @@ void get_dimensions(const cv::Mat &m1, const cv::Mat &m2, int &w, int &h,
  * Save the image as png
  */
 void save_image(std::string image_name, cv::Mat &mOut);
+
+
+
 
 #endif //IMAGE_H
 
