@@ -53,6 +53,11 @@ void get_dimensions(const cv::Mat &m1, const cv::Mat &m2, int &w, int &h,
 		int &nc);
 
 /**
+ * Save the dimensions of the image to w, h, and nc
+ */
+void get_dimensions(const cv::Mat &m, int &w, int &h, int &nc);
+
+/**
  * Save the image as png
  */
 void save_image(std::string image_name, cv::Mat &mOut);

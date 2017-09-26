@@ -262,6 +262,14 @@ void get_dimensions(const Mat &m1, const Mat &m2, int &w, int &h, int &nc)
 
 }
 
+void get_dimensions(const Mat &m, int &w, int &h, int &nc)
+{
+	w = m.cols;        // width
+	h = m.rows;        // height
+	nc = m.channels(); // number of channels
+}
+
+
 void save_image(string image_name, Mat &mOut)
 {
 	// save input and result
