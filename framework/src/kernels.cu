@@ -1,7 +1,7 @@
 #include "kernels.h"
 #include "util.h"
 
-__device__  float rho(float *iL, float *iR, int nc, float lambda)
+__device__ float rho(float *iL, float *iR, int nc, float lambda)
 {
 	float sum = 0.f;
 	// Sum the error for all channels
@@ -186,7 +186,7 @@ __global__ void g_div3(float *P, float *Div3_P, int w, int h, int gc)
 
 		float p1, p2, p3, div3_p;
 
-		for (int g = gc; g > 0; g--)
+		for (int g = gc - 1; g > 0; g--)
 		{
 			// Calculate the indices for p1, p2, p3
 			max_z = 3 * gc;
@@ -228,12 +228,13 @@ __global__ void g_compute_g(float *Phi, float *G, int w, int h, int gamma_min,
 	write_data(G, gamma, w, h, x, y);
 }
 
-__global__ void g_squared_err_g(float *G, float *G_last, int w, int h, float *err)
+__global__ void g_squared_err_g(float *G, float *G_last, int w, int h,
+		float *err)
 {
 	int x = threadIdx.x + blockDim.x * blockIdx.x;
 	int y = threadIdx.y + blockDim.y * blockIdx.y;
 
-	if(x < w && y < h)
+	if (x < w && y < h)
 	{
 		float e = read_data(G, w, h, x, y) - read_data(G_last, w, h, x, y);
 		atomicAdd(err, square(e));
