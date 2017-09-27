@@ -6,9 +6,6 @@
 using namespace std;
 using namespace cv;
 
-#define MAX_W 1024
-#define MAX_H 768
-
 // opencv helpers
 void convert_layered_to_interleaved(float *aOut, const float *aIn, int w, int h,
 		int nc)
@@ -124,7 +121,7 @@ void downsample(Mat &mIn, int max_w, int max_h)
 	if (mIn.cols > max_w)
 		factor = (float) max_w / mIn.cols;
 
-	if (mIn.rows > MAX_H)
+	if (mIn.rows > max_h)
 		factor = min((float) max_h / mIn.rows, factor);
 
 	if (factor > 0)
@@ -132,7 +129,7 @@ void downsample(Mat &mIn, int max_w, int max_h)
 }
 
 
-Mat load_image(const std::string image, bool gray)
+Mat load_image(const string image, bool gray, int max_width, int max_heigth)
 {
 	// Load the input image using opencv
 	// (load as grayscale if "gray==true", otherwise as is (may be color or grayscale))
@@ -149,7 +146,7 @@ Mat load_image(const std::string image, bool gray)
 
 	// cout << "Original image is " << mIn.cols << " x " << mIn.rows << " x " << mIn.channels() << endl;
 
-	downsample(mIn, MAX_W, MAX_H);
+	downsample(mIn, max_width, max_heigth);
 
 	return mIn;
 }
@@ -159,7 +156,7 @@ Mat load_image(const std::string image, bool gray)
  * Implementation reference:
  * https://github.com/antoinetlc/PFM_ReadWrite/blob/master/PFMReadWrite.cpp
  */
-Mat load_pfm(const std::string image)
+Mat load_pfm(const std::string image, int max_width, int max_height)
 {
 	// Open image as binary filestream
 	ifstream file(image.c_str(), ios::in | ios::binary);
@@ -231,18 +228,15 @@ Mat load_pfm(const std::string image)
 	}
 	else
 	{
-		cerr << "Unable ot open file " << image << endl;
+		cerr << "Unable to open file " << image << endl;
 		exit(1);
 	}
 
 	// close filestream
 	file.close();
 
-	// Change range (0-255) to (0-1)
-	mDisparities /= 255.f;
-
 	// downsample to max resolution
-	downsample(mDisparities, MAX_W, MAX_H);
+	downsample(mDisparities, max_width, max_height);
 
 	return mDisparities;
 }

@@ -55,22 +55,31 @@ bool getParam<bool>(string param, bool &var, int argc, char **argv)
 
 void print_usage()
 {
+	cout << endl;
 	cout << "Depth Adaptive Diffusion" << endl;
-	cout
-			<< "-i <path/to/image.png>   | specify image base name. +'0.png' for Left and +'1.png' for Right"
-			<< endl;
-	cout << "[-gray]                  | use grayscale image" << endl;
-	cout << "[-lambda <float>]        | parameter lambda" << endl;
-	cout
-			<< "[-tau_d      <float>]    | parameter tau for the p update step"
-			<< endl;
-	cout
-			<< "[-tau_p      <float>]    | parameter tau for the phi update step"
-			<< endl;
-	cout << "[-gamma_min  <int>]      | minimal disparity" << endl;
-	cout << "[-gamma_max  <int>]      | maximum disparity" << endl;
-	cout << "[-iterations <int>]      | maximum number of iterations"
-			<< endl;
+	cout << "-help                   | Display this message" << endl;
+	cout << "--Image parameters ----------------------------------------- " << endl;
+	cout << "-image         <path>   | specify image base name (+0/1.png)" << endl;
+	cout << "[-gray]                 | use grayscale image" << endl;
+	cout << "[-w            <int>]   | maximum width of image" << endl;
+	cout << "[-h            <int>]   | maximum height of image" << endl;
+	cout << "--Disparity calculation parameters --------------------------" << endl;
+	cout << "[-lambda       <float>] | scaling of data term" << endl;
+	cout << "[-tau_d        <float>] | scaling of p update step " << endl;
+	cout << "[-tau_p        <float>] | scaling of phi update step"  << endl;
+	cout << "[-gamma_min    <int>]   | minimal disparity" << endl;
+	cout << "[-gamma_max    <int>]   | maximum disparity" << endl;
+	cout << "[-iterations   <int>]   | maximum number of iterations" << endl;
+	cout << "--Diffusion parameters --------------------------------------" << endl;
+	cout << "[-disparities  <path>]  | disparity values file " << endl;
+	cout << "[-radius       <float>] | strength of the diffusion " << endl;
+	cout << "[-tau          <float>] | scaling of update step " << endl;
+	cout << "[-baseline     <float>] | camera baseline in mm " << endl;
+	cout << "[-doffs        <float>] | difference in principal points (L/R)" << endl;
+	cout << "[-focal_length <float>] | focal length in pixels " << endl;
+	cout << "[-focal_plane  <float>] | focal plane between [0,1]" << endl;
+	cout << "[-iterations   <int>]   | maximum number of iterations" << endl;
+	cout << "-------------------------------------------------------------" << endl;
 	cout << endl;
 }
 
@@ -81,28 +90,40 @@ void read_parameters(config &conf, int argc, char **argv)
 	if (argc <= 1)
 	{
 		print_usage();
+		exit(0);
 	}
 
+	bool foo;
+	bool ret = getParam("help", foo, argc, argv);
+	if(ret)
+	{
+		print_usage();
+		exit(0);
+	}
+
+
 	// Set defaults
+	conf.max_w = 3000;
+	conf.max_h = 2000;
 	conf.gray = false;
 	conf.disparities_from_file = false;
 	conf.lambda = 30.f;
 	conf.tau_p = 1.f / sqrtf(3.f);
 	conf.tau_d = 1.f / sqrtf(3.f);
-	conf.gamma_min = -4;
-	conf.gamma_max = 4;
+	conf.gamma_min = 0;
+	conf.gamma_max = 250;
 	conf.max_iterations = 1000;
 
 	// For diffusion
-	conf.sigma = 4;
+	conf.radius = 2.f;
 	conf.tau = 0.25f; // maximum possible value
 	conf.baseline = 193.001f;
 	conf.doffs = 124.343f;
 	conf.focal_length = 3979.911f;
-	conf.focal_plane = 0.5f * (conf.gamma_max - conf.gamma_min + 1);
+	conf.focal_plane = 0.5f;
 
 	// Process input image
-	bool ret = getParam("image", conf.image, argc, argv);
+	ret = getParam("image", conf.image, argc, argv);
 	if (!ret)
 	{
 		cerr << "ERROR: no image specified" << endl;
@@ -111,6 +132,10 @@ void read_parameters(config &conf, int argc, char **argv)
 
 	conf.disparities_from_file = getParam("disparities", conf.disparities, argc,
 			argv);
+
+	getParam("h", conf.max_h, argc, argv);
+
+	getParam("w", conf.max_w, argc, argv);
 
 	getParam("gray", conf.gray, argc, argv);
 
@@ -121,9 +146,11 @@ void read_parameters(config &conf, int argc, char **argv)
 	getParam("tau_d", conf.tau_d, argc, argv);
 
 	getParam("tau", conf.tau, argc, argv);
-	if(conf.tau > 0.25f)
+	if (conf.tau > 0.25f)
 	{
-		cerr << "ERROR: tau is outside the range of possible values, this will not converge!" << endl;
+		cerr
+				<< "ERROR: tau is outside the range of possible values, this will not converge!"
+				<< endl;
 	}
 
 	getParam("gamma_min", conf.gamma_min, argc, argv);
@@ -136,11 +163,13 @@ void read_parameters(config &conf, int argc, char **argv)
 		exit(1);
 	}
 
-	getParam("max_iterations", conf.max_iterations, argc, argv);
+	getParam("iterations", conf.max_iterations, argc, argv);
 
-	getParam("sigma", conf.sigma, argc, argv);
+	getParam("radius", conf.radius, argc, argv);
 
 	getParam("focal_length", conf.focal_length, argc, argv);
+
+	getParam("focal_plane", conf.focal_plane, argc, argv);
 
 	getParam("doffs", conf.doffs, argc, argv);
 
