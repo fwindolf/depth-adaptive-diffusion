@@ -216,20 +216,61 @@ __global__ void g_compute_g(float *Phi, float *G, int w, int h, int gamma_min,
 	int x = threadIdx.x + blockDim.x * blockIdx.x;
 	int y = threadIdx.y + blockDim.y * blockIdx.y;
 
-	float gamma = (float) gamma_min;
-	int gc = gamma_max - gamma_min + 1;
+	int gamma = gamma_min;
+	int gc = gamma_max - gamma_min;
 
-	for (int g = 0; g < gc; g++)
+	if (x < w && y < h)
 	{
-		// use mu = 0.5 aka round to nearest integer value
-		gamma += roundf(read_data(Phi, w, h, gc, x, y, g));
-	}
+		for (int g = 0; g < gc; g++)
+		{
+			// use mu = 0.5 aka round to nearest integer value
+			gamma += (int) round(read_data(Phi, w, h, gc, x, y, g));
+		}
 
-	write_data(G, gamma, w, h, x, y);
+		write_data(G, gamma, w, h, x, y);
+	}
 }
 
-__global__ void g_squared_err_g(float *G, float *G_last, int w, int h,
-		float *err)
+__global__ void g_compute_energy(float * G, float *IL, float *IR, float * energy, int w, int h, int nc, float lambda)
+{
+	int x = threadIdx.x + blockDim.x * blockIdx.x;
+	int y = threadIdx.y + blockDim.y * blockIdx.y;
+
+	__shared__ float sm;
+
+	if (x < w && y < h)
+	{
+		float e = 0.f;
+
+		// Regularizing term: |grad(u(x))|
+		int g = read_data(G, w, h, x, y);
+		int gx = read_data(G, w, h, x + 1, y);
+		int gy = read_data(G, w, h, x, y + 1);
+		e += sqrt(square(gx - g) + square(gy - g)); // Regularizing term
+
+		// Data term: rho(u(x), x)
+		float iL[3];
+		float iR[3];
+
+		// Save image data to temporary arrays
+		for (int c = 0; c < nc; c++)
+		{
+			iL[c] = read_data(IL, w, h, nc, x, y, c);
+			iR[c] = read_data(IR, w, h, nc, x + g, y, c); // g is the current, calculated disparity value
+		}
+		e += rho(iL, iR, nc, lambda);
+
+		atomicAdd(&sm, e);
+		__syncthreads();
+
+
+		// Add this to the current energy
+		if(threadIdx.x == 0)
+			atomicAdd(energy, sm);
+	}
+
+}
+__global__ void g_squared_err_g(int *G, int *G_last, int w, int h, float *err)
 {
 	int x = threadIdx.x + blockDim.x * blockIdx.x;
 	int y = threadIdx.y + blockDim.y * blockIdx.y;
