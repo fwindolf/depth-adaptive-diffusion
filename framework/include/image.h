@@ -5,7 +5,6 @@
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
 
-
 /**
  * Convert a matrix in interleaved format to layered format
  */
@@ -24,8 +23,8 @@ void showImage(std::string title, const cv::Mat &mat, int x, int y);
 /**
  * Display a histogram at x, y
  */
-void showHistogram256(const char *windowTitle, int *histogram, int windowX, int windowY);
-
+void showHistogram256(const char *windowTitle, int *histogram, int windowX,
+		int windowY);
 
 /**
  * Add gaussian noise with intensity sigma to an image
@@ -35,7 +34,8 @@ void addNoise(cv::Mat &m, float sigma);
 /**
  * Read an input image
  */
-cv::Mat load_image(const std::string image, bool gray, int max_width, int max_heigth);
+cv::Mat load_image(const std::string image, bool gray, int max_width,
+		int max_heigth);
 
 /**
  * Read an input image that is a pfm file
@@ -62,11 +62,15 @@ void get_dimensions(const cv::Mat &m, int &w, int &h, int &nc);
  */
 void save_image(std::string image_name, cv::Mat &mOut);
 
+/**
+ * Save 1 channel image that is still on the GPU
+ */
+void save_from_GPU(std::string name, float * image, int w, int h);
 
-
+/**
+ * Save 3 channel image that is still on the GPU
+ */
+void save_from_GPU(std::string name, float * image, int w, int h, int nc);
 
 #endif //IMAGE_H
-
-
-
 

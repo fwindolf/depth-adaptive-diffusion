@@ -128,7 +128,6 @@ void downsample(Mat &mIn, int max_w, int max_h)
 		resize(mIn, mIn, Size(), factor, factor, INTER_AREA);
 }
 
-
 Mat load_image(const string image, bool gray, int max_width, int max_heigth)
 {
 	// Load the input image using opencv
@@ -150,7 +149,6 @@ Mat load_image(const string image, bool gray, int max_width, int max_heigth)
 
 	return mIn;
 }
-
 
 /**
  * Implementation reference:
@@ -263,10 +261,47 @@ void get_dimensions(const Mat &m, int &w, int &h, int &nc)
 	nc = m.channels(); // number of channels
 }
 
-
 void save_image(string image_name, Mat &mOut)
 {
 	// save input and result
 	imwrite(image_name + ".png", mOut * 255.f);
+}
+
+void save_from_GPU(string name, float * image, int w, int h)
+{
+	// Get image from device
+	float * img = new float[w * h];
+	cudaMemcpy(img, image, (size_t) w * h * sizeof(float),
+			cudaMemcpyDeviceToHost);
+	CUDA_CHECK;
+
+	// Create greyscale matrix
+	Mat mImg(h, w, CV_32FC1);
+
+	// Convert to matrix
+	convert_layered_to_mat(mImg, img);
+	mImg /= 255.f;
+	normalize(mImg, mImg, 0.f, 1.f, cv::NORM_MINMAX, CV_32FC1);
+
+	save_image(name, mImg);
+}
+
+void save_from_GPU(string name, float * image, int w, int h, int nc)
+{
+	// Get image from device
+	float * img = new float[w * h * nc];
+	cudaMemcpy(img, image, (size_t) w * h * nc * sizeof(float),
+			cudaMemcpyDeviceToHost);
+	CUDA_CHECK;
+
+	// Create greyscale matrix
+	Mat mImg(h, w, CV_32FC3);
+
+	// Convert to matrix
+	convert_layered_to_mat(mImg, img);
+	mImg /= 255.f;
+	normalize(mImg, mImg, 0.f, 1.f, cv::NORM_MINMAX, CV_32FC3);
+
+	save_image(name, mImg);
 }
 
