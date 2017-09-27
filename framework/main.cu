@@ -2,6 +2,7 @@
 #include "usage.h"
 #include "image.h"
 #include "gradient.h"
+#include "reduce.h"
 #include "kernels.h"
 #include <iostream>
 using namespace std;
@@ -54,52 +55,63 @@ __device__ __host__ float alpha(float f, float n, int z_f)
  * z_f is the depth of the focal plane between gamma_min, gamma_max = [0,1]
  * g needs to be scaled in order to lie between [0,1]
  */
-__global__ void g_compute_g(float *Depths, float *G, int w, int h, float z_f,
-		float alpha)
+
+/*
+ __global__ void g_compute_g(float *Depths, float *G, int w, int h, float z_f,
+ float alpha)
+ {
+ int x = threadIdx.x + blockDim.x * blockIdx.x;
+ int y = threadIdx.y + blockDim.y * blockIdx.y;
+
+ float g = 0.f;
+
+ if (x < w && y < h)
+ {
+ float z = read_data(Depths, w, h, x, y);
+ if (z != 0)
+ g = alpha * square(fabs(z - z_f) / z);
+
+ write_data(G, g, w, h, x, y);
+ }
+ }
+ */
+
+__global__ void g_compute_g_matrix(float *Depths, float *G, int w, int h,
+		float z_f, float radius)
 {
 	int x = threadIdx.x + blockDim.x * blockIdx.x;
 	int y = threadIdx.y + blockDim.y * blockIdx.y;
 
-	float z;
-
 	if (x < w && y < h)
 	{
-		z = read_data(Depths, w, h, x, y);
-		write_data(G, alpha * square(fabs(z - z_f) / z), w, h, x, y);
+		float z = read_data(Depths, w, h, x, y);
+		write_data(G, powf(fabs(z - z_f), radius), w, h, x, y);
 	}
 }
 
-/**
- * Apply G and write the result back to the gradient vectors
- */
-__global__ void g_apply_g(float *Grad_x, float *Grad_y, int w, int h, int nc)
+__global__ void g_apply_g(float *Grad_x, float *Grad_y, float *G, int w, int h, int nc)
 {
 	int x = threadIdx.x + blockDim.x * blockIdx.x;
 	int y = threadIdx.y + blockDim.y * blockIdx.y;
 
-	if (x < w && y < h)
-	{
-		float g = tex2D(texRef, x + 0.5f, y + 0.5f);
-		float grad_x, grad_y;
+    if(x < w && y < h)
+    {
+	    float g = read_data(G, w, h, x, y);
+	    float gx, gy;
 
-		for (int c = 0; c < nc; c++)
-		{
-			grad_x = read_data(Grad_x, w, h, nc, x, y, c);
-			grad_y = read_data(Grad_y, w, h, nc, x, y, c);
+	    for (int c = 0; c < nc; c++)
+	    {
+		    gx = read_data(Grad_x, w, h, nc, x, y, c);
+		    gy = read_data(Grad_y, w, h, nc, x, y, c);
 
-			// Write v_1 back to V_1 and v_2 to V_2
-			write_data(Grad_x, g * grad_x, w, h, nc, x, y, c);
-			write_data(Grad_y, g * grad_y, w, h, nc, x, y, c);
-		}
+            write_data(Grad_x, gx* g, w, h, nc, x, y, c);
+            write_data(Grad_y, gy* g, w, h, nc, x, y, c);
+        }
 	}
-
 }
 
-/**
- * Compute the update step as In+1 = In + tau*D
- */
-__global__ void g_update_step(float *D, float *I, int w, int h, int nc,
-		float tau)
+
+__global__ void g_update_step(float *I, float *D, int w, int h, int nc, float tau)
 {
 	int x = threadIdx.x + blockDim.x * blockIdx.x;
 	int y = threadIdx.y + blockDim.y * blockIdx.y;
@@ -107,14 +119,14 @@ __global__ void g_update_step(float *D, float *I, int w, int h, int nc,
 
 	float upd;
 
-	if (x < w && y < h && c < nc)
+	if(x < w && y < h)
 	{
-		upd = read_data(I, w, h, nc, x, y, c)
-				+ tau * read_data(D, w, h, nc, x, y, c);
+		float i = read_data(I, w, h, nc, x, y, c);
+		float d = read_data(D, w, h, nc, x, y, c);
+		upd = i + tau * d;
 		write_data(I, upd, w, h, nc, x, y, c);
 	}
 }
-
 
 cv::Mat calculate_disparities(const config c)
 {
@@ -126,8 +138,8 @@ cv::Mat calculate_disparities(const config c)
 	// image + 1 is right
 	string imageR = c.image + "1.png";
 
-	cv::Mat mInL = load_image(imageL, c.gray);
-	cv::Mat mInR = load_image(imageR, c.gray);
+	cv::Mat mInL = load_image(imageL, c.gray, c.max_w, c.max_h);
+	cv::Mat mInR = load_image(imageR, c.gray, c.max_w, c.max_h);
 
 	// Width, height and channels of image
 	int w, h, nc;
@@ -262,9 +274,6 @@ cv::Mat calculate_disparities(const config c)
 				c.gamma_min);
 		CUDA_CHECK;
 
-		if (iterations > c.max_iterations)
-			break;
-
 		// TODO: convergence check via energy that is minimized, not via change of g
 		// check convergence
 		if (iterations % 1000 == 0)
@@ -331,15 +340,16 @@ cv::Mat calculate_disparities(const config c)
 	return mOut;
 }
 
-
 cv::Mat adaptive_diffusion(const cv::Mat mDisparities, const cv::Mat mIn,
 		const config c)
 {
-	cv::Mat mDiffused;
+	cout << "Depth Adaptive Diffusion" << endl;
 
 	// Width, height and channels of image
 	int w, h, nc;
 	get_dimensions(mIn, w, h, nc);
+
+	cv::Mat mDiffused = cv::Mat(h, w, CV_32FC3);
 
 	// Convert to layered representation
 	float *imgIn = new float[(size_t) w * h * nc];
@@ -349,14 +359,19 @@ cv::Mat adaptive_diffusion(const cv::Mat mDisparities, const cv::Mat mIn,
 	convert_mat_to_layered(imgDisparities, mDisparities);
 
 	// Input, Disparities, Output image
-	float *In, *Disparities, *Depths, *Out = NULL;
+	float *In, *Out = NULL;
+	size_t nbytes = (size_t) (w * h * nc) * sizeof(float);
+
+	float *Disparities, *Depths = NULL;
+	size_t ndisparities = (size_t) (w * h) * sizeof(float);
+	size_t ndepths = (size_t) (w * h) * sizeof(float);
+
+	// G matrix
+	float *G = NULL;
+	size_t ngbytes = (size_t) (w * h) * sizeof(float);
 
 	// Gradient in x,y direction, divergence
 	float *Grad_x, *Grad_y, *Divergence = NULL;
-
-	size_t nbytes = (size_t) (w * h * nc) * sizeof(float);
-	size_t ndisparities = (size_t) (w * h) * sizeof(int);
-	size_t ndepths = (size_t) (w * h) * sizeof(float);
 
 	// Reserve space on device
 	cudaMalloc(&In, nbytes);
@@ -373,10 +388,14 @@ cv::Mat adaptive_diffusion(const cv::Mat mDisparities, const cv::Mat mIn,
 	CUDA_CHECK;
 	cudaMalloc(&Depths, ndepths);
 	CUDA_CHECK;
+	cudaMalloc(&G, ngbytes);
+	CUDA_CHECK;
 
 	cudaMemset(In, 0, nbytes);
 	CUDA_CHECK;
 	cudaMemset(Out, 0, nbytes);
+	CUDA_CHECK;
+	cudaMemset(G, 0, ngbytes);
 	CUDA_CHECK;
 
 	// Copy disparities to device
@@ -392,23 +411,27 @@ cv::Mat adaptive_diffusion(const cv::Mat mDisparities, const cv::Mat mIn,
 	dim3 grid2D((w + block2D.x - 1) / block2D.x,
 			(h + block2D.y - 1) / block2D.y);
 
-	dim3 block3D(64, 2, 1);
+	dim3 block3D(64, 2, nc);
 	dim3 grid3D((w + block3D.x - 1) / block3D.x,
 			(h + block3D.y - 1) / block3D.y, (nc + block3D.z - 1) / block3D.z);
 
 	// Compute the depth from the disparity values
-	g_compute_depth<<<grid2D, block2D>>>(Disparities, Depths, w, h, c.baseline, c.focal_length, c.doffs);
+	g_compute_depth<<<grid2D, block2D>>>(Disparities, Depths, w, h, c.baseline,
+			c.focal_length, c.doffs);
+	CUDA_CHECK;
+
+	// Normalize to [0, 1]
+	normalize(Depths, w, h, 0.f, 1.f);
 
 	// ---- Calculate the G matrix
-	float a = alpha(c.focal_length, 1.f, c.focal_plane);
+	g_compute_g_matrix<<<grid2D, block2D>>>(Depths, G, w, h, c.focal_plane, c.radius);
+	CUDA_CHECK;
 
-	// Setup disparities as texture memory
-	texRef.addressMode[0] = cudaAddressModeClamp;// clamp x to border
-	texRef.addressMode[1] = cudaAddressModeClamp; // clamp y to border
-	texRef.filterMode = cudaFilterModeLinear; // linear interpolation
-	texRef.normalized = false; // access as (x+0.5f,y+0.5f), not as ((x+0.5f)/w,(y+0.5f)/h)
-	cudaChannelFormatDesc desc = cudaCreateChannelDesc<float>();
-	cudaBindTexture2D(NULL, &texRef, Disparities, &desc, w, h, sizeof(float));
+	// Normalize to [0, 1]
+	normalize(G, w, h, 0.f, 1.f);
+
+	save_from_GPU("depths", Depths, w, h);
+	save_from_GPU("g", G, w, h);
 
 	for (int i = 0; i < c.max_iterations; i++)
 	{
@@ -425,7 +448,7 @@ cv::Mat adaptive_diffusion(const cv::Mat mDisparities, const cv::Mat mIn,
 		CUDA_CHECK;
 
 		// apply G matrix from texture memory
-		g_apply_g<<<grid2D, block2D>>>(Grad_x, Grad_y, w, h, nc);
+		g_apply_g<<<grid2D, block2D>>>(Grad_x, Grad_y, G, w, h, nc);
 		CUDA_CHECK;
 
 		// calculate divergence
@@ -442,6 +465,22 @@ cv::Mat adaptive_diffusion(const cv::Mat mDisparities, const cv::Mat mIn,
 	CUDA_CHECK;
 
 	convert_layered_to_mat(mDiffused, imgIn);
+
+	// free memory
+	cudaFree(In);
+	CUDA_CHECK;
+	cudaFree(G);
+	CUDA_CHECK;
+	cudaFree(Grad_x);
+	CUDA_CHECK;
+	cudaFree(Grad_y);
+	CUDA_CHECK;
+	cudaFree(Divergence);
+	CUDA_CHECK;
+	cudaFree(Disparities);
+	CUDA_CHECK;
+	cudaFree(Depths);
+	CUDA_CHECK;
 
 	delete[] imgIn;
 	delete[] imgDisparities;
@@ -461,14 +500,19 @@ int main(int argc, char **argv)
 	// Load input images
 	std::string imageL = c.image + "0.png", imageR = c.image + "1.png";
 
-	cv::Mat mInL = load_image(imageL, c.gray);
-	cv::Mat mInR = load_image(imageR, c.gray);
+	cv::Mat mInL = load_image(imageL, c.gray, c.max_w, c.max_h);
+	cv::Mat mInR = load_image(imageR, c.gray, c.max_w, c.max_h);
+
+	int w, h, nc;
+	get_dimensions(mInL, w, h, nc);
+
+	cout << "Image Dimensions: " << w << "x" << h << "x" << nc << endl;
 
 	// Get disparities from dataset or calculate
 	cv::Mat mDisparities;
 	if (c.disparities_from_file)
 	{
-		mDisparities = load_pfm(c.disparities);
+		mDisparities = load_pfm(c.disparities, c.max_w, c.max_h);
 	}
 	else
 	{
@@ -479,11 +523,15 @@ int main(int argc, char **argv)
 	cv::Mat mOut = adaptive_diffusion(mDisparities, mInL, c);
 
 	showImage("Input", mInL, 100, 100);
-	// normalize(mDisparities, mDisparities, 0.f, 1.f, cv::NORM_MINMAX, CV_32FC1);
-	showImage("Disparities", mDisparities, 500, 100);
 
-	showImage("Output", mOut, 100, 500);
+	// Reduce range from [0, 255] to [0, 1]
+	mDisparities /= 255.f;
+	//normalize(mDisparities, mDisparities, 0.f, 1.f, cv::NORM_MINMAX, CV_32FC1);
+	showImage("Disparities", mDisparities, 600, 100);
+	save_image("disparities", mDisparities);
 
+	showImage("Output", mOut, 100, 600);
+	save_image("out", mOut);
 	// wait for key inputs
 	cv::waitKey(0);
 
