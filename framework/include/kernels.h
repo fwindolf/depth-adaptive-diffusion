@@ -93,4 +93,59 @@ __global__ void g_compute_g(float *Phi, float *G, int w, int h, int gamma_min,
 __global__ void g_compute_energy(float *G, float *IL, float *IR, float *energy,
 		int w, int h, int nc, float gamma);
 
+/**
+ * Calculate the depth from the disparity values
+ *
+ * Z = baseline * f / (d + doffs)
+ *
+ * baseline is the camera baseline in mm
+ * f is the focal length in pixels
+ * doffs is the x-difference of principal points (cx1 - cx0) for im1 and im0
+ *
+ * The result will be stored in Depths
+ */
+__global__ void g_compute_depth(float * Disparities, float *Depths, int w,
+		int h, float baseline, int f, int doffs);
+
+/**
+ * Compute the g matrix from the Depths
+ *
+ * x * y threads needed
+ *
+ * Depths hold the depth values normalized to [0,1] for the image
+ * z_f is the point of focus between [0,1]
+ * radius indicates how much the points not in focus will be diffused
+ *
+ * The result will be stored in G
+ */
+__global__ void g_compute_g_matrix(float *Depths, float *G, int w, int h,
+		float z_f, float radius);
+
+/**
+ * Apply the G matrix to the gradients
+ *
+ * x * y threads needed
+ *
+ * Grad_x and Grad_y hold the gradients of the image
+ * G is the G matrix
+ *
+ * The result will be stored back in the gradients
+ */
+__global__ void g_apply_g(float *Grad_x, float *Grad_y, float *G, int w, int h,
+		int nc);
+
+/**
+ * Update step for the image during the diffusion
+ *
+ * x * y * nc threads needed
+ *
+ * I is the image of the step
+ * D is the result of the divergence of the last step
+ * tau is the step size
+ *
+ * The output will be stored back into I
+ */
+__global__ void g_update_step(float *I, float *D, int w, int h, int nc,
+		float tau);
+
 #endif

@@ -7,132 +7,10 @@
 #include <iostream>
 using namespace std;
 
-// Texture memory for the G values
-texture<float, 2, cudaReadModeElementType> texRef;
-
-/**
- * Calculate the depth from the disparity values
- *
- * Z = baseline * f / (d + doffs)
- * baseline: 	camera baseline in mm
- * f: 			focal length in pixels
- * d:			disparity for pixel
- * doffs:		x-difference of principal points (cx1 - cx0) for im1 and im0
- */
-__global__ void g_compute_depth(float * Disparities, float *Depths, int w,
-		int h, float baseline, int f, int doffs)
-{
-	int x = threadIdx.x + blockDim.x * blockIdx.x;
-	int y = threadIdx.y + blockDim.y * blockIdx.y;
-
-	if (x < w && y < h)
-	{
-		float d = read_data(Disparities, w, h, x, y);
-		write_data(Depths, baseline * f / (d + doffs), w, h, x, y);
-	}
-}
-
-/**
- * Compute the alpha parameter for the circle of confusion
- *
- * alpha = F²/(n * (Zf - F)) with focal length F and aperture n
- * and depth of the focal plane between gamma_min, gamma_max = [0, 1]
- */
-__device__ __host__ float alpha(float f, float n, int z_f)
-{
-	return square(f) / (n * (z_f - f));
-}
-
-/**
- * Compute the g function via an estimated circle of confusion
- *
- * See: Bertalmio, Fort et al: Real-time, Accurate Depth of Field
- * using Anisotropic Diffusion and Programmable Graphic Cards
- * http://www.dtic.upf.edu/~mbertalmio/dof/dof01.pdf
- *
- * g(x,y) = alpha * (| Z(x,y) - Zf | / Z(x,y) )²
- *
- * z_f is the depth of the focal plane between gamma_min, gamma_max = [0,1]
- * g needs to be scaled in order to lie between [0,1]
- */
-
-/*
- __global__ void g_compute_g(float *Depths, float *G, int w, int h, float z_f,
- float alpha)
- {
- int x = threadIdx.x + blockDim.x * blockIdx.x;
- int y = threadIdx.y + blockDim.y * blockIdx.y;
-
- float g = 0.f;
-
- if (x < w && y < h)
- {
- float z = read_data(Depths, w, h, x, y);
- if (z != 0)
- g = alpha * square(fabs(z - z_f) / z);
-
- write_data(G, g, w, h, x, y);
- }
- }
- */
-
-__global__ void g_compute_g_matrix(float *Depths, float *G, int w, int h,
-		float z_f, float radius)
-{
-	int x = threadIdx.x + blockDim.x * blockIdx.x;
-	int y = threadIdx.y + blockDim.y * blockIdx.y;
-
-	if (x < w && y < h)
-	{
-		float z = read_data(Depths, w, h, x, y);
-		write_data(G, powf(fabs(z - z_f), radius), w, h, x, y);
-	}
-}
-
-__global__ void g_apply_g(float *Grad_x, float *Grad_y, float *G, int w, int h, int nc)
-{
-	int x = threadIdx.x + blockDim.x * blockIdx.x;
-	int y = threadIdx.y + blockDim.y * blockIdx.y;
-
-    if(x < w && y < h)
-    {
-	    float g = read_data(G, w, h, x, y);
-	    float gx, gy;
-
-	    for (int c = 0; c < nc; c++)
-	    {
-		    gx = read_data(Grad_x, w, h, nc, x, y, c);
-		    gy = read_data(Grad_y, w, h, nc, x, y, c);
-
-            write_data(Grad_x, gx* g, w, h, nc, x, y, c);
-            write_data(Grad_y, gy* g, w, h, nc, x, y, c);
-        }
-	}
-}
-
-
-__global__ void g_update_step(float *I, float *D, int w, int h, int nc, float tau)
-{
-	int x = threadIdx.x + blockDim.x * blockIdx.x;
-	int y = threadIdx.y + blockDim.y * blockIdx.y;
-	int c = threadIdx.z + blockDim.z * blockIdx.z;
-
-	float upd;
-
-	if(x < w && y < h)
-	{
-		float i = read_data(I, w, h, nc, x, y, c);
-		float d = read_data(D, w, h, nc, x, y, c);
-		upd = i + tau * d;
-		write_data(I, upd, w, h, nc, x, y, c);
-	}
-}
-
 cv::Mat calculate_disparities(const config c)
 {
 	// define the range of gamma
-	int gc = gamma_max - gamma_min;
-
+	int gc = c.gamma_max - c.gamma_min;
 
 	// image + 0 is left
 	string imageL = c.image + "0.png";
@@ -288,7 +166,7 @@ cv::Mat calculate_disparities(const config c)
 			CUDA_CHECK;
 
 			g_compute_energy<<<grid2D, block2D>>>(G, IL, IR, energy, w, h, nc,
-					lambda);
+					c.lambda);
 			CUDA_CHECK;
 
 			float energy_host = 0.f;
@@ -297,7 +175,7 @@ cv::Mat calculate_disparities(const config c)
 
 			cout << iterations << ": Energy is " << energy_host << endl;
       
-			if (energy_host < 0.01 || iterations >= max_iterations)
+			if (energy_host < 0.01 || iterations >= c.max_iterations)
 				break;
 		}
 
@@ -331,8 +209,6 @@ cv::Mat calculate_disparities(const config c)
 	cudaFree(G);
 	CUDA_CHECK;
 	cudaFree(G_last);
-	CUDA_CHECK;
-	cudaFree(err);
 	CUDA_CHECK;
 
 	return mOut;
