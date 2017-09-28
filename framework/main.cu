@@ -131,7 +131,8 @@ __global__ void g_update_step(float *I, float *D, int w, int h, int nc, float ta
 cv::Mat calculate_disparities(const config c)
 {
 	// define the range of gamma
-	int gc = c.gamma_max - c.gamma_min + 1;
+	int gc = gamma_max - gamma_min;
+
 
 	// image + 0 is left
 	string imageL = c.image + "0.png";
@@ -197,8 +198,9 @@ cv::Mat calculate_disparities(const config c)
 	CUDA_CHECK;
 
 	// for the final depth values
-	size_t gBytes = w * h * sizeof(float);
 	float * G, *G_last = NULL;
+	size_t gBytes = w * h * sizeof(float);
+
 	cudaMalloc(&G, gBytes);
 	CUDA_CHECK;
 	cudaMemset(G, 0, gBytes);
@@ -208,10 +210,10 @@ cv::Mat calculate_disparities(const config c)
 	cudaMemset(G_last, 0, gBytes);
 	CUDA_CHECK;
 
-	float * err = NULL;
-	cudaMalloc(&err, sizeof(float));
+	float * energy = NULL;
+	cudaMalloc(&energy, sizeof(float));
 	CUDA_CHECK;
-	cudaMemset(err, 0, sizeof(float));
+	cudaMemset(energy, 0, sizeof(float));
 	CUDA_CHECK;
 
 	// copy data to device
@@ -240,7 +242,7 @@ cv::Mat calculate_disparities(const config c)
 	CUDA_CHECK;
 
 	// Iterate until stopping criterion is reached
-	int iterations = 0;
+	int iterations = 1;
 	while (1)
 	{
 		// Reset gradient and divergence
@@ -274,32 +276,28 @@ cv::Mat calculate_disparities(const config c)
 				c.gamma_min);
 		CUDA_CHECK;
 
-		// TODO: convergence check via energy that is minimized, not via change of g
 		// check convergence
-		if (iterations % 1000 == 0)
+		if (iterations % 100 == 0)
 		{
-			// Save G of last convergence check
-			cudaMemcpy(G_last, G, gBytes, cudaMemcpyDeviceToDevice);
-			CUDA_CHECK;
-
 			// Calculate the new G
 			g_compute_g<<<grid2D, block2D>>>(Phi, G, w, h, c.gamma_min,
 					c.gamma_max);
 			CUDA_CHECK;
 
-			cudaMemset(err, 0, sizeof(float));
+			cudaMemset(energy, 0, sizeof(float));
 			CUDA_CHECK;
 
-			g_squared_err_g<<<grid2D, block2D>>>(G, G_last, w, h, err);
+			g_compute_energy<<<grid2D, block2D>>>(G, IL, IR, energy, w, h, nc,
+					lambda);
 			CUDA_CHECK;
 
-			float err_host = 0.f;
-			cudaMemcpy(&err_host, err, sizeof(float), cudaMemcpyDeviceToHost);
+			float energy_host = 0.f;
+			cudaMemcpy(&energy_host, energy, sizeof(float), cudaMemcpyDeviceToHost);
 			CUDA_CHECK;
 
-			cout << iterations << ": Error is " << err_host << endl;
-
-			if (sqrt(err_host) < 0.01 || iterations > c.max_iterations)
+			cout << iterations << ": Energy is " << energy_host << endl;
+      
+			if (energy_host < 0.01 || iterations >= max_iterations)
 				break;
 		}
 

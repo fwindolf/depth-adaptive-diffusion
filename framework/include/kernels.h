@@ -85,12 +85,12 @@ __global__ void g_div3(float *P, float *Div3_P, int w, int h, int gc);
 __global__ void g_compute_g(float *Phi, float *G, int w, int h, int gamma_min,
 		int gamma_max);
 
-
 /**
- * Calcualate the sum of squared errors between two gamma matrices
+ * Calcualate the energy of the current gamma matrix
  *
  * x * y threads needed
  */
-__global__ void g_squared_err_g(float *G, float *G_last, int w, int h, float *err);
+__global__ void g_compute_energy(float *G, float *IL, float *IR, float *energy,
+		int w, int h, int nc, float gamma);
 
 #endif
