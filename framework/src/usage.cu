@@ -101,7 +101,6 @@ void read_parameters(config &conf, int argc, char **argv)
 		exit(0);
 	}
 
-
 	// Set defaults
 	conf.max_w = 3000;
 	conf.max_h = 2000;
@@ -130,8 +129,7 @@ void read_parameters(config &conf, int argc, char **argv)
 		exit(1);
 	}
 
-	conf.disparities_from_file = getParam("disparities", conf.disparities, argc,
-			argv);
+	conf.disparities_from_file = getParam("disparities", conf.disparities, argc, argv);
 
 	getParam("h", conf.max_h, argc, argv);
 
@@ -148,9 +146,7 @@ void read_parameters(config &conf, int argc, char **argv)
 	getParam("tau", conf.tau, argc, argv);
 	if (conf.tau > 0.25f)
 	{
-		cerr
-				<< "ERROR: tau is outside the range of possible values, this will not converge!"
-				<< endl;
+		cerr << "ERROR: tau is outside the range of possible values, this will not converge!" << endl;
 	}
 
 	getParam("gamma_min", conf.gamma_min, argc, argv);

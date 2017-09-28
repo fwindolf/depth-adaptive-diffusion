@@ -233,6 +233,9 @@ Mat load_pfm(const std::string image, int max_width, int max_height)
 	// close filestream
 	file.close();
 
+	// Remove the "missing" pixels
+	medianBlur(mDisparities, mDisparities, 7);
+
 	// downsample to max resolution
 	downsample(mDisparities, max_width, max_height);
 
