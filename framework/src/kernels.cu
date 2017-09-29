@@ -49,7 +49,7 @@ __global__ void g_project_p_c(float * P, float * IL, float *IR, int w, int h,
 				iL[c] = read_data(IL, w, h, nc, x, y, c);
 				// Use the disparity value of this layer of P
 				// index of gamma runs from 0...gc, thus offset by gamma_min (eg. -16)
-				iR[c] = read_data(IR, w, h, nc, x + gamma_min + g, y, c);
+				iR[c] = read_data(IR, w, h, nc, x - (gamma_min + g), y, c);
 			}
 
 			float r = rho(iL, iR, nc, lambda);
