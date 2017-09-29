@@ -104,6 +104,9 @@ void read_parameters(config &conf, int argc, char **argv)
 	// Set defaults
 	conf.max_w = 3000;
 	conf.max_h = 2000;
+	conf.dx = 1.f;
+	conf.dy = 1.f;
+	conf.dg = .5f;
 	conf.gray = false;
 	conf.disparities_from_file = false;
 	conf.lambda = 30.f;

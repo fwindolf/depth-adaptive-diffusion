@@ -25,6 +25,7 @@ SET(
 	#-lineinfo; # Add line information 
 	-Wno-deprecated-gpu-targets; # Disable the warning
 	-rdc=true; # Allow relocation of device code -> CUDA_SEPARABLE_COMPILATION On
+	-O0;
 )
 
 # message("CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS}")

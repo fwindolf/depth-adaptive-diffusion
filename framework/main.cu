@@ -5,7 +5,83 @@
 #include "reduce.h"
 #include "kernels.h"
 #include <iostream>
+#include <iomanip>
+#include <sstream>
+#include "assert.h"
 using namespace std;
+
+void check_Phi(float * Phi, int w, int h, int gc)
+{
+	cudaDeviceSynchronize();
+
+	float * phi_check = new float[w * h];
+	for (int g = 0; g < gc; g++)
+	{
+		cudaMemcpy(phi_check, &Phi[g * w * h], w * h * sizeof(float),
+				cudaMemcpyDeviceToHost);
+		CUDA_CHECK;
+		for (int i = 0; i < w * h; i++)
+		{
+			if (g == 0)
+			{
+				assert(phi_check[i] == 1.f);
+			}
+			else if (g == gc)
+			{
+				assert(phi_check[i] == 0.f);
+			}
+			else
+			{
+				assert(phi_check[i] <= 1.f && phi_check[i] >= 0.f);
+			}
+		}
+	}
+}
+
+
+void check_P(float * P, float *Rho, int w, int h, int gc)
+{
+	cudaDeviceSynchronize();
+
+	float * p1_check = new float[w * h];
+	float * p2_check = new float[w * h];
+	float * p3_check = new float[w * h];
+	float * rho = new float[w * h];
+
+	for (int g = 0; g < gc; g++)
+	{
+		size_t ip1 = g * w * h;
+		size_t ip2 = (1 * gc + g) * w * h;
+		size_t ip3 = (2 * gc + g) * w * h;
+		cudaMemcpy(p1_check, &P[ip1], w * h * sizeof(float),
+				cudaMemcpyDeviceToHost);
+		CUDA_CHECK;
+
+		cudaMemcpy(p2_check, &P[ip2], w * h * sizeof(float),
+						cudaMemcpyDeviceToHost);
+		CUDA_CHECK;
+
+		cudaMemcpy(p3_check, &P[ip3], w * h * sizeof(float),
+						cudaMemcpyDeviceToHost);
+		CUDA_CHECK;
+
+		cudaMemcpy(rho, &Rho[g * w * h], w * h * sizeof(float),
+								cudaMemcpyDeviceToHost);
+		CUDA_CHECK;
+
+		for (int i = 0; i < w * h; i++)
+		{
+			if(sqrtf(square(p1_check[i]) + square(p2_check[i])) > 1)
+			{
+				cout << "i: " << i << ", g: " << g << ": p1=" << p1_check[i] << ", p2=" << p2_check[i] << endl;
+			}
+			if(fabs(p3_check[i]) > rho[i])
+			{
+				cout << "i: " << i << ", g: " << g << ": rho=" << rho[i] << ", p3=" << p3_check[i] << endl;
+			}
+		}
+	}
+}
 
 cv::Mat calculate_disparities(const config c)
 {
@@ -23,7 +99,6 @@ cv::Mat calculate_disparities(const config c)
 	// Width, height and channels of image
 	int w, h, nc;
 	get_dimensions(mInL, mInR, w, h, nc);
-	cout << "Image Dimensions: " << w << " x " << h << " x " << nc << endl;
 
 	// Define output array, grayscale image of depth values
 	cv::Mat mOut(h, w, CV_32FC1);
@@ -75,17 +150,20 @@ cv::Mat calculate_disparities(const config c)
 	cudaMemset(Div3_P, 0, phiBytes);
 	CUDA_CHECK;
 
-	// for the final depth values
-	float * G, *G_last = NULL;
-	size_t gBytes = w * h * sizeof(float);
+	// for the error values Rho
+	float * Rho = NULL;
+	size_t rhoBytes = w * h * gc * sizeof(float);
+	cudaMalloc(&Rho, rhoBytes);
+	CUDA_CHECK;
+	cudaMemset(Rho, 0, rhoBytes);
+	CUDA_CHECK;
 
-	cudaMalloc(&G, gBytes);
+	// for the final depth values
+	float * U = NULL;
+	size_t uBytes = w * h * sizeof(float);
+	cudaMalloc(&U, uBytes);
 	CUDA_CHECK;
-	cudaMemset(G, 0, gBytes);
-	CUDA_CHECK;
-	cudaMalloc(&G_last, gBytes);
-	CUDA_CHECK;
-	cudaMemset(G_last, 0, gBytes);
+	cudaMemset(U, 0, uBytes);
 	CUDA_CHECK;
 
 	float * energy = NULL;
@@ -114,10 +192,23 @@ cv::Mat calculate_disparities(const config c)
 	dim3 grid1DPhi((w * h * gc + block1D.x - 1) / block1D.x);
 
 	// Actual Algorithm
-	// Initialization works with 0s for P, only for Phi the first layer needs to be 1s
-	// Thus run the projection once
-	g_project_phi_d<<<grid3D, block3D>>>(Phi, w, h, gc);
+	// Initialize Phi
+	g_init_phi<<<grid2D, block2D>>>(Phi, w, h, gc);
 	CUDA_CHECK;
+
+	check_Phi(Phi, w, h, gc);
+
+	// Compute a global rho (that doesn't change...)
+	g_compute_rho<<<grid2D, block2D>>>(IL, IR, Rho, w, h, nc, c.gamma_min,
+			c.gamma_max, c.lambda);
+	CUDA_CHECK;
+
+	for (int g = 0; g < gc; g++)
+	{
+		stringstream path;
+		path << "rho/rho_" << setfill('0') << setw(3) << g + c.gamma_min;
+		save_from_GPU(path.str(), &Rho[g * w * h], w, h);
+	}
 
 	// Iterate until stopping criterion is reached
 	int iterations = 1;
@@ -130,52 +221,96 @@ cv::Mat calculate_disparities(const config c)
 		CUDA_CHECK;
 
 		// Calculate the divergence of P for the update step of phi
-		g_div3<<<grid2D, block2D>>>(P, Div3_P, w, h, gc);
-		CUDA_CHECK;
+		g_div3<<<grid2D, block2D>>>(P, Div3_P, w, h, gc, c.dx, c.dy, c.dg);
 
 		// Update the Phi
 		g_update_phi<<<grid2D, block2D>>>(Phi, Div3_P, w, h, gc, c.tau_p);
 		CUDA_CHECK;
 
-		// Make sure Phi is in the solution space (D)
-		g_project_phi_d<<<grid2D, block2D>>>(Phi, w, h, gc);
-		CUDA_CHECK;
+
+		check_Phi(Phi, w, h, gc);
 
 		// Calculate the gradient in x, y, and gamma direction
-		g_grad3<<<grid2D, block2D>>>(Phi, Grad3_Phi, w, h, gc);
+		g_grad3<<<grid2D, block2D>>>(Phi, Grad3_Phi, w, h, gc, c.dx, c.dy,
+				c.dg);
 		CUDA_CHECK;
+
 
 		// Update the P
-		g_update_p<<<grid2D, block2D>>>(P, Grad3_Phi, w, h, gc, c.tau_d);
+		g_update_p<<<grid2D, block2D>>>(P, Grad3_Phi, Rho, w, h, gc, c.tau_d);
 		CUDA_CHECK;
 
-		// Make sure P is in solution space (C)
-		g_project_p_c<<<grid2D, block2D>>>(P, IL, IR, w, h, nc, gc, c.lambda,
-				c.gamma_min);
-		CUDA_CHECK;
+		if (iterations >= c.max_iterations)
+			break;
 
 		// check convergence
-		if (iterations % 100 == 0)
+		if (iterations % (c.max_iterations / 5) == 0)
 		{
+			cout << "Iteration " << iterations << endl;
+			/*
+			for (int g = 0; g < gc; g++)
+			{
+				stringstream path1, path2, path3;
+				path1 << "p/p1_" << setfill('0') << setw(5) <<  iterations << "_" << setfill('0') << setw(3) << g + c.gamma_min;
+				path2 << "p/p2_" << setfill('0') << setw(5) <<  iterations << "_" << setfill('0') << setw(3) << g + c.gamma_min;
+				path3 << "p/p3_" << setfill('0') << setw(5) << 	 iterations << "_" << setfill('0') << setw(3) << g + c.gamma_min;
+				size_t ip1 = g * w * h;
+				size_t ip2 = (1 * gc + g) * w * h;
+				size_t ip3 = (2 * gc + g) * w * h;
+				save_from_GPU(path1.str(), &P[ip1], w, h);
+				save_from_GPU(path2.str(), &P[ip2], w, h);
+				save_from_GPU(path3.str(), &P[ip3], w, h);
+			}
+
+			for (int g = 0; g < gc; g++)
+			{
+				stringstream pathx, pathy, pathg;
+				pathx << "grad/gradx_" << setfill('0') << setw(5) <<  iterations << "_" << setfill('0') << setw(3) << g + c.gamma_min;
+				pathy << "grad/grady_" << setfill('0') << setw(5) <<  iterations << "_" << setfill('0') << setw(3) << g + c.gamma_min;
+				pathg << "grad/gradg_" << setfill('0') << setw(5) <<  iterations << "_" << setfill('0') << setw(3) << g + c.gamma_min;
+				size_t ip1 = g * w * h;
+				size_t ip2 = (1 * gc + g) * w * h;
+				size_t ip3 = (2 * gc + g) * w * h;
+				save_from_GPU(pathx.str(), &Grad3_Phi[ip1], w, h);
+				save_from_GPU(pathy.str(), &Grad3_Phi[ip2], w, h);
+				save_from_GPU(pathg.str(), &Grad3_Phi[ip3], w, h);
+			}
+*/
+			for (int g = 0; g < gc; g++)
+			{
+				stringstream path;
+				path << "phi/phi_" << setfill('0') << setw(5) << iterations << "_" << setfill('0') << setw(3) << g + c.gamma_min;
+				save_from_GPU(path.str(), &Phi[g * w * h], w, h);
+			}
+/*
+			for (int g = 0; g < gc; g++)
+			{
+				stringstream path;
+				path << "div/div_" << setfill('0') << setw(5) << iterations << "_" << setfill('0') << setw(3) << g + c.gamma_min;
+				save_from_GPU(path.str(), &Div3_P[g * w * h], w, h);
+			}
+			 */
+
 			// Calculate the new G
-			g_compute_g<<<grid2D, block2D>>>(Phi, G, w, h, c.gamma_min,
+			g_compute_u<<<grid2D, block2D>>>(Phi, U, w, h, c.gamma_min,
 					c.gamma_max);
 			CUDA_CHECK;
 
 			cudaMemset(energy, 0, sizeof(float));
 			CUDA_CHECK;
 
-			g_compute_energy<<<grid2D, block2D>>>(G, IL, IR, energy, w, h, nc,
+			g_compute_energy<<<grid2D, block2D>>>(U, IL, IR, energy, w, h, nc,
 					c.lambda);
 			CUDA_CHECK;
 
 			float energy_host = 0.f;
-			cudaMemcpy(&energy_host, energy, sizeof(float), cudaMemcpyDeviceToHost);
+			cudaMemcpy(&energy_host, energy, sizeof(float),
+					cudaMemcpyDeviceToHost);
 			CUDA_CHECK;
 
 			cout << iterations << ": Energy is " << energy_host << endl;
-      
-			if (energy_host < 0.01 || iterations >= c.max_iterations)
+
+			if (energy_host < 0.01)
 				break;
 		}
 
@@ -183,7 +318,7 @@ cv::Mat calculate_disparities(const config c)
 	}
 
 	// Move disparities from device to host
-	cudaMemcpy(imgOut, G, gBytes, cudaMemcpyDeviceToHost);
+	cudaMemcpy(imgOut, U, uBytes, cudaMemcpyDeviceToHost);
 	CUDA_CHECK;
 
 	// show output image: first convert to interleaved opencv format from the layered raw array
@@ -206,9 +341,7 @@ cv::Mat calculate_disparities(const config c)
 	CUDA_CHECK;
 	cudaFree(Div3_P);
 	CUDA_CHECK;
-	cudaFree(G);
-	CUDA_CHECK;
-	cudaFree(G_last);
+	cudaFree(U);
 	CUDA_CHECK;
 
 	return mOut;
@@ -298,7 +431,8 @@ cv::Mat adaptive_diffusion(const cv::Mat mDisparities, const cv::Mat mIn,
 	normalize(Depths, w, h, 0.f, 1.f);
 
 	// ---- Calculate the G matrix
-	g_compute_g_matrix<<<grid2D, block2D>>>(Depths, G, w, h, c.focal_plane, c.radius);
+	g_compute_g_matrix<<<grid2D, block2D>>>(Depths, G, w, h, c.focal_plane,
+			c.radius);
 	CUDA_CHECK;
 
 	// Normalize to [0, 1]
@@ -307,7 +441,7 @@ cv::Mat adaptive_diffusion(const cv::Mat mDisparities, const cv::Mat mIn,
 	save_from_GPU("depths", Depths, w, h);
 	save_from_GPU("g", G, w, h);
 
-	for (int i = 0; i < c.max_iterations; i++)
+	for (int i = 0; i < 15; i++)
 	{
 		// reset the gradient/divergence data
 		cudaMemset(Grad_x, 0, nbytes);

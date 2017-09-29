@@ -25,6 +25,11 @@ __host__ void init_device();
 */
 __device__ __host__ int clamp(int i, int lo, int hi);
 
+/**
+ * Clamp a float between lo and hi
+ */
+__device__ __host__ float fclamp(float i, float lo, float hi);
+
 /*
 * Clamp an address for x and y
 */

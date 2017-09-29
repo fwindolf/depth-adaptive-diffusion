@@ -11,6 +11,9 @@ struct config {
 	float 	lambda, 				// weight of data term
 			tau_p, 					// step size of phi update
 			tau_d,					// step size of p update
+			dx, 					// resolution of the x component of gradient/divergence
+			dy, 					// resolution of the y component of gradient/divergence
+			dg,						// resolution of the g component of gradient/divergence
 			radius,					// strength of the diffusion
 			baseline,				// camera baseline in mm
 			doffs, 					// offset between principal points of im0 and im1

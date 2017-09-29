@@ -33,6 +33,11 @@ __device__ __host__ int clamp(int i, int lo, int hi)
 	return max(lo, min(i, hi));
 }
 
+__device__ __host__ float fclamp(float i, float lo, float hi)
+{
+	return fmax(lo, fmin(i, hi));
+}
+
 __device__ __host__ int clamp_address(int x, int y, int w, int h)
 {
 	int xaddr = clamp(x, 0, w - 1);
