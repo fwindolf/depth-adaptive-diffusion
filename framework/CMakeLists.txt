@@ -32,6 +32,9 @@ SET(
 # Files for different exercises
 SET(COMMON_SRC src/util.cu src/usage.cu src/kernels.cu)
 SET(IMAGE_SRC src/image.cu)
+SET(CONVOLUTION_SRC src/convolution.cu)
+SET(GRADIENT_SRC src/gradient.cu)
+SET(REDUCE_SRC src/reduce.cu)
 
 # CUDA include directories
 INCLUDE_DIRECTORIES(
@@ -44,6 +47,8 @@ CUDA_ADD_EXECUTABLE(
 	main.cu
 	${COMMON_SRC}
 	${IMAGE_SRC}
+	${GRADIENT_SRC}
+	${REDUCE_SRC}
 )
 
 
@@ -62,6 +67,8 @@ CUDA_ADD_EXECUTABLE(
 	main.cu
 	${COMMON_SRC}
 	${IMAGE_SRC}
+	${GRADIENT_SRC}
+	${REDUCE_SRC}
 )
 
 TARGET_LINK_LIBRARIES(depth_adaptive_diffusion ${OpenCV_LIBS})

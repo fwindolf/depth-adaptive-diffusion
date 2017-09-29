@@ -231,7 +231,8 @@ __global__ void g_compute_g(float *Phi, float *G, int w, int h, int gamma_min,
 	}
 }
 
-__global__ void g_compute_energy(float * G, float *IL, float *IR, float * energy, int w, int h, int nc, float lambda)
+__global__ void g_compute_energy(float * G, float *IL, float *IR,
+		float * energy, int w, int h, int nc, float lambda)
 {
 	int x = threadIdx.x + blockDim.x * blockIdx.x;
 	int y = threadIdx.y + blockDim.y * blockIdx.y;
@@ -263,21 +264,75 @@ __global__ void g_compute_energy(float * G, float *IL, float *IR, float * energy
 		atomicAdd(&sm, e);
 		__syncthreads();
 
-
 		// Add this to the current energy
-		if(threadIdx.x == 0)
+		if (threadIdx.x == 0)
 			atomicAdd(energy, sm);
 	}
 
 }
-__global__ void g_squared_err_g(int *G, int *G_last, int w, int h, float *err)
+
+__global__ void g_compute_depth(float * Disparities, float *Depths, int w,
+		int h, float baseline, int f, int doffs)
 {
 	int x = threadIdx.x + blockDim.x * blockIdx.x;
 	int y = threadIdx.y + blockDim.y * blockIdx.y;
 
 	if (x < w && y < h)
 	{
-		float e = read_data(G, w, h, x, y) - read_data(G_last, w, h, x, y);
-		atomicAdd(err, square(e));
+		float d = read_data(Disparities, w, h, x, y);
+		write_data(Depths, baseline * f / (d + doffs), w, h, x, y);
+	}
+}
+
+__global__ void g_compute_g_matrix(float *Depths, float *G, int w, int h,
+		float z_f, float radius)
+{
+	int x = threadIdx.x + blockDim.x * blockIdx.x;
+	int y = threadIdx.y + blockDim.y * blockIdx.y;
+
+	if (x < w && y < h)
+	{
+		float z = read_data(Depths, w, h, x, y);
+		write_data(G, powf(fabs(z - z_f), radius), w, h, x, y);
+	}
+}
+
+__global__ void g_apply_g(float *Grad_x, float *Grad_y, float *G, int w, int h,
+		int nc)
+{
+	int x = threadIdx.x + blockDim.x * blockIdx.x;
+	int y = threadIdx.y + blockDim.y * blockIdx.y;
+
+	if (x < w && y < h)
+	{
+		float g = read_data(G, w, h, x, y);
+		float gx, gy;
+
+		for (int c = 0; c < nc; c++)
+		{
+			gx = read_data(Grad_x, w, h, nc, x, y, c);
+			gy = read_data(Grad_y, w, h, nc, x, y, c);
+
+			write_data(Grad_x, gx * g, w, h, nc, x, y, c);
+			write_data(Grad_y, gy * g, w, h, nc, x, y, c);
+		}
+	}
+}
+
+__global__ void g_update_step(float *I, float *D, int w, int h, int nc,
+		float tau)
+{
+	int x = threadIdx.x + blockDim.x * blockIdx.x;
+	int y = threadIdx.y + blockDim.y * blockIdx.y;
+	int c = threadIdx.z + blockDim.z * blockIdx.z;
+
+	float upd;
+
+	if (x < w && y < h)
+	{
+		float i = read_data(I, w, h, nc, x, y, c);
+		float d = read_data(D, w, h, nc, x, y, c);
+		upd = i + tau * d;
+		write_data(I, upd, w, h, nc, x, y, c);
 	}
 }
