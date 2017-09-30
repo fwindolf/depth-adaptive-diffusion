@@ -275,14 +275,14 @@ cv::Mat calculate_disparities(const config c)
 				save_from_GPU(pathy.str(), &Grad3_Phi[ip2], w, h);
 				save_from_GPU(pathg.str(), &Grad3_Phi[ip3], w, h);
 			}
-*/
+
 			for (int g = 0; g < gc; g++)
 			{
 				stringstream path;
 				path << "phi/phi_" << setfill('0') << setw(5) << iterations << "_" << setfill('0') << setw(3) << g + c.gamma_min;
 				save_from_GPU(path.str(), &Phi[g * w * h], w, h);
 			}
-/*
+
 			for (int g = 0; g < gc; g++)
 			{
 				stringstream path;

@@ -150,6 +150,83 @@ Mat load_image(const string image, bool gray, int max_width, int max_heigth)
 	return mIn;
 }
 
+Mat interpolate_missing_data(Mat image)
+{
+	int w = image.cols;
+	int h = image.rows;
+
+	Mat out(h, w, image.type());
+
+	for (int c = 0; c < image.channels(); c++)
+	{
+		for (int y = 0; y < h; y++)
+		{
+			for (int x = 0; x < w; x++)
+			{
+				float px = image.at<float>(y, x, c);
+				// is that pixel valid?
+				if (isinf(px))
+				{
+					// flag for valid pixels in neighborhood
+					bool valid = false;
+					// range for looking up/down, left/right
+					int range = 1;
+
+					// number of valid points found
+					int valid_nearest = 0;
+					// sum of the valid points
+					float sum_nearest = 0.f;
+
+					// find nearest valid neighbour
+					while (!valid)
+					{
+						for (int r = -range; r < range; r++)
+						{
+							// right of pixel
+							float px_r = image.at<float>(y + r, x + range, c);
+							if (!isinf(px_r))
+							{
+								valid = true;
+								sum_nearest += px_r;
+								valid_nearest++;
+							}
+							// under pixel
+							float px_u = image.at<float>(y - range, x + r, c);
+							if (!isinf(px_u))
+							{
+								valid = true;
+								sum_nearest += px_u;
+								valid_nearest++;
+							}
+							// left of pixel
+							float px_l = image.at<float>(y + r, x - range, c);
+							if (!isinf(px_l))
+							{
+								valid = true;
+								sum_nearest += px_l;
+								valid_nearest++;
+							}
+							// over pixel
+							float px_o = image.at<float>(y + range, x - r, c);
+							if (!isinf(px_o))
+							{
+								valid = true;
+								sum_nearest += px_o;
+								valid_nearest++;
+							}
+						}
+						// increase search radius
+						range++;
+					}
+					px = sum_nearest / valid_nearest;
+				}
+				out.at<float>(y, x, c) = px;
+			}
+		}
+	}
+	return out;
+}
+
 /**
  * Implementation reference:
  * https://github.com/antoinetlc/PFM_ReadWrite/blob/master/PFMReadWrite.cpp
@@ -234,7 +311,8 @@ Mat load_pfm(const std::string image, int max_width, int max_height)
 	file.close();
 
 	// Remove the "missing" pixels
-	medianBlur(mDisparities, mDisparities, 7);
+	// medianBlur(mDisparities, mDisparities, 7);
+	mDisparities = interpolate_missing_data(mDisparities);
 
 	// downsample to max resolution
 	downsample(mDisparities, max_width, max_height);
