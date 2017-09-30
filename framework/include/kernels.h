@@ -20,7 +20,7 @@ __global__ void g_compute_rho(float *iL, float *iR, float *Rho, int w, int h,
  *
  * x * y threads needed
  */
-__global__ void g_init_phi(float *Phi, int w, int h, int gc);
+__global__ void g_init_phi(float *Phi, float *U, int w, int h, int gc);
 
 /**
  * Update and backproject the Phi vector and save the result back to Phi

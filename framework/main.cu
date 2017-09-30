@@ -38,7 +38,6 @@ void check_Phi(float * Phi, int w, int h, int gc)
 	}
 }
 
-
 void check_P(float * P, float *Rho, int w, int h, int gc)
 {
 	cudaDeviceSynchronize();
@@ -58,32 +57,34 @@ void check_P(float * P, float *Rho, int w, int h, int gc)
 		CUDA_CHECK;
 
 		cudaMemcpy(p2_check, &P[ip2], w * h * sizeof(float),
-						cudaMemcpyDeviceToHost);
+				cudaMemcpyDeviceToHost);
 		CUDA_CHECK;
 
 		cudaMemcpy(p3_check, &P[ip3], w * h * sizeof(float),
-						cudaMemcpyDeviceToHost);
+				cudaMemcpyDeviceToHost);
 		CUDA_CHECK;
 
 		cudaMemcpy(rho, &Rho[g * w * h], w * h * sizeof(float),
-								cudaMemcpyDeviceToHost);
+				cudaMemcpyDeviceToHost);
 		CUDA_CHECK;
 
 		for (int i = 0; i < w * h; i++)
 		{
-			if(sqrtf(square(p1_check[i]) + square(p2_check[i])) > 1)
+			if (sqrtf(square(p1_check[i]) + square(p2_check[i])) > 1)
 			{
-				cout << "i: " << i << ", g: " << g << ": p1=" << p1_check[i] << ", p2=" << p2_check[i] << endl;
+				cout << "i: " << i << ", g: " << g << ": p1=" << p1_check[i]
+						<< ", p2=" << p2_check[i] << endl;
 			}
-			if(fabs(p3_check[i]) > rho[i])
+			if (fabs(p3_check[i]) > rho[i])
 			{
-				cout << "i: " << i << ", g: " << g << ": rho=" << rho[i] << ", p3=" << p3_check[i] << endl;
+				cout << "i: " << i << ", g: " << g << ": rho=" << rho[i]
+						<< ", p3=" << p3_check[i] << endl;
 			}
 		}
 	}
 }
 
-cv::Mat calculate_disparities(const config c)
+cv::Mat calculate_disparities(const config c, cv::Mat mDisparities)
 {
 	// define the range of gamma
 	int gc = c.gamma_max - c.gamma_min;
@@ -107,12 +108,16 @@ cv::Mat calculate_disparities(const config c)
 	float *imgInL = new float[(size_t) w * h * nc];
 	float *imgInR = new float[(size_t) w * h * nc];
 
+	float *imgDisparities = new float[(size_t) w * h];
+
 	// allocate raw output array (the computation result will be stored in this array, then later converted to mOut for displaying)
 	float *imgOut = new float[(size_t) w * h * mOut.channels()];
 
 	// Init raw input image array
 	convert_mat_to_layered(imgInL, mInL);
 	convert_mat_to_layered(imgInR, mInR);
+
+	convert_mat_to_layered(imgDisparities, mDisparities);
 
 	// Allocate memory on device for images
 	size_t imgBytes = w * h * nc * sizeof(float);
@@ -193,10 +198,23 @@ cv::Mat calculate_disparities(const config c)
 
 	// Actual Algorithm
 	// Initialize Phi
-	g_init_phi<<<grid2D, block2D>>>(Phi, w, h, gc);
+	cudaMemcpy(U, imgDisparities, uBytes, cudaMemcpyHostToDevice);
+	CUDA_CHECK;
+
+	g_init_phi<<<grid2D, block2D>>>(Phi, U, w, h, gc);
+	CUDA_CHECK;
+
+	cudaMemset(U, 0, uBytes);
 	CUDA_CHECK;
 
 	check_Phi(Phi, w, h, gc);
+
+	for (int g = 0; g < gc; g++)
+	{
+		stringstream path;
+		path << "phi/phi_00000_" << setfill('0') << setw(3) << g + c.gamma_min;
+		save_from_GPU(path.str(), &Phi[g * w * h], w, h);
+	}
 
 	// Compute a global rho (that doesn't change...)
 	g_compute_rho<<<grid2D, block2D>>>(IL, IR, Rho, w, h, nc, c.gamma_min,
@@ -227,7 +245,6 @@ cv::Mat calculate_disparities(const config c)
 		g_update_phi<<<grid2D, block2D>>>(Phi, Div3_P, w, h, gc, c.tau_p);
 		CUDA_CHECK;
 
-
 		check_Phi(Phi, w, h, gc);
 
 		// Calculate the gradient in x, y, and gamma direction
@@ -235,60 +252,56 @@ cv::Mat calculate_disparities(const config c)
 				c.dg);
 		CUDA_CHECK;
 
-
 		// Update the P
 		g_update_p<<<grid2D, block2D>>>(P, Grad3_Phi, Rho, w, h, gc, c.tau_d);
 		CUDA_CHECK;
 
-		if (iterations >= c.max_iterations)
-			break;
-
 		// check convergence
-		if (iterations % (c.max_iterations / 5) == 0)
+		if (iterations % (c.max_iterations / 2) == 0)
 		{
 			cout << "Iteration " << iterations << endl;
 			/*
-			for (int g = 0; g < gc; g++)
-			{
-				stringstream path1, path2, path3;
-				path1 << "p/p1_" << setfill('0') << setw(5) <<  iterations << "_" << setfill('0') << setw(3) << g + c.gamma_min;
-				path2 << "p/p2_" << setfill('0') << setw(5) <<  iterations << "_" << setfill('0') << setw(3) << g + c.gamma_min;
-				path3 << "p/p3_" << setfill('0') << setw(5) << 	 iterations << "_" << setfill('0') << setw(3) << g + c.gamma_min;
-				size_t ip1 = g * w * h;
-				size_t ip2 = (1 * gc + g) * w * h;
-				size_t ip3 = (2 * gc + g) * w * h;
-				save_from_GPU(path1.str(), &P[ip1], w, h);
-				save_from_GPU(path2.str(), &P[ip2], w, h);
-				save_from_GPU(path3.str(), &P[ip3], w, h);
-			}
+			 for (int g = 0; g < gc; g++)
+			 {
+			 stringstream path1, path2, path3;
+			 path1 << "p/p1_" << setfill('0') << setw(5) <<  iterations << "_" << setfill('0') << setw(3) << g + c.gamma_min;
+			 path2 << "p/p2_" << setfill('0') << setw(5) <<  iterations << "_" << setfill('0') << setw(3) << g + c.gamma_min;
+			 path3 << "p/p3_" << setfill('0') << setw(5) << 	 iterations << "_" << setfill('0') << setw(3) << g + c.gamma_min;
+			 size_t ip1 = g * w * h;
+			 size_t ip2 = (1 * gc + g) * w * h;
+			 size_t ip3 = (2 * gc + g) * w * h;
+			 save_from_GPU(path1.str(), &P[ip1], w, h);
+			 save_from_GPU(path2.str(), &P[ip2], w, h);
+			 save_from_GPU(path3.str(), &P[ip3], w, h);
+			 }
 
-			for (int g = 0; g < gc; g++)
-			{
-				stringstream pathx, pathy, pathg;
-				pathx << "grad/gradx_" << setfill('0') << setw(5) <<  iterations << "_" << setfill('0') << setw(3) << g + c.gamma_min;
-				pathy << "grad/grady_" << setfill('0') << setw(5) <<  iterations << "_" << setfill('0') << setw(3) << g + c.gamma_min;
-				pathg << "grad/gradg_" << setfill('0') << setw(5) <<  iterations << "_" << setfill('0') << setw(3) << g + c.gamma_min;
-				size_t ip1 = g * w * h;
-				size_t ip2 = (1 * gc + g) * w * h;
-				size_t ip3 = (2 * gc + g) * w * h;
-				save_from_GPU(pathx.str(), &Grad3_Phi[ip1], w, h);
-				save_from_GPU(pathy.str(), &Grad3_Phi[ip2], w, h);
-				save_from_GPU(pathg.str(), &Grad3_Phi[ip3], w, h);
-			}
-
-			for (int g = 0; g < gc; g++)
-			{
-				stringstream path;
-				path << "phi/phi_" << setfill('0') << setw(5) << iterations << "_" << setfill('0') << setw(3) << g + c.gamma_min;
-				save_from_GPU(path.str(), &Phi[g * w * h], w, h);
-			}
-
-			for (int g = 0; g < gc; g++)
-			{
-				stringstream path;
-				path << "div/div_" << setfill('0') << setw(5) << iterations << "_" << setfill('0') << setw(3) << g + c.gamma_min;
-				save_from_GPU(path.str(), &Div3_P[g * w * h], w, h);
-			}
+			 for (int g = 0; g < gc; g++)
+			 {
+			 stringstream pathx, pathy, pathg;
+			 pathx << "grad/gradx_" << setfill('0') << setw(5) <<  iterations << "_" << setfill('0') << setw(3) << g + c.gamma_min;
+			 pathy << "grad/grady_" << setfill('0') << setw(5) <<  iterations << "_" << setfill('0') << setw(3) << g + c.gamma_min;
+			 pathg << "grad/gradg_" << setfill('0') << setw(5) <<  iterations << "_" << setfill('0') << setw(3) << g + c.gamma_min;
+			 size_t ip1 = g * w * h;
+			 size_t ip2 = (1 * gc + g) * w * h;
+			 size_t ip3 = (2 * gc + g) * w * h;
+			 save_from_GPU(pathx.str(), &Grad3_Phi[ip1], w, h);
+			 save_from_GPU(pathy.str(), &Grad3_Phi[ip2], w, h);
+			 save_from_GPU(pathg.str(), &Grad3_Phi[ip3], w, h);
+			 }
+			 */
+			 for (int g = 0; g < gc; g++)
+			 {
+			 stringstream path;
+			 path << "phi/phi_" << setfill('0') << setw(5) << iterations << "_" << setfill('0') << setw(3) << g + c.gamma_min;
+			 save_from_GPU(path.str(), &Phi[g * w * h], w, h);
+			 }
+			 /*
+			 for (int g = 0; g < gc; g++)
+			 {
+			 stringstream path;
+			 path << "div/div_" << setfill('0') << setw(5) << iterations << "_" << setfill('0') << setw(3) << g + c.gamma_min;
+			 save_from_GPU(path.str(), &Div3_P[g * w * h], w, h);
+			 }
 			 */
 
 			// Calculate the new G
@@ -310,7 +323,7 @@ cv::Mat calculate_disparities(const config c)
 
 			cout << iterations << ": Energy is " << energy_host << endl;
 
-			if (energy_host < 0.01)
+			if (energy_host < 0.01 || iterations >= c.max_iterations)
 				break;
 		}
 
@@ -524,8 +537,12 @@ int main(int argc, char **argv)
 	}
 	else
 	{
-		mDisparities = calculate_disparities(c);
+		cerr
+				<< "ERROR: Call without ground truth not supported in this version!"
+				<< endl;
+		exit(1);
 	}
+	mDisparities = calculate_disparities(c, mDisparities);
 
 	// Do anisotropic diffusion with the depth values
 	cv::Mat mOut = adaptive_diffusion(mDisparities, mInL, c);

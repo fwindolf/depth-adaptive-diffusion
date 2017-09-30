@@ -183,7 +183,7 @@ Mat interpolate_missing_data(Mat image)
 						for (int r = -range; r < range; r++)
 						{
 							// right of pixel
-							float px_r = image.at<float>(y + r, x + range, c);
+							float px_r = image.at<float>(clamp(y + r, 0, h), clamp(x + range, 0, w), c);
 							if (!isinf(px_r))
 							{
 								valid = true;
@@ -191,7 +191,7 @@ Mat interpolate_missing_data(Mat image)
 								valid_nearest++;
 							}
 							// under pixel
-							float px_u = image.at<float>(y - range, x + r, c);
+							float px_u = image.at<float>(clamp(y - range, 0, h), clamp(x + r, 0, w), c);
 							if (!isinf(px_u))
 							{
 								valid = true;
@@ -199,7 +199,7 @@ Mat interpolate_missing_data(Mat image)
 								valid_nearest++;
 							}
 							// left of pixel
-							float px_l = image.at<float>(y + r, x - range, c);
+							float px_l = image.at<float>(clamp(y + r, 0, h), clamp(x - range, 0, w), c);
 							if (!isinf(px_l))
 							{
 								valid = true;
@@ -207,7 +207,7 @@ Mat interpolate_missing_data(Mat image)
 								valid_nearest++;
 							}
 							// over pixel
-							float px_o = image.at<float>(y + range, x - r, c);
+							float px_o = image.at<float>(clamp(y + range, 0, h), clamp(x - r, 0, w), c);
 							if (!isinf(px_o))
 							{
 								valid = true;
@@ -217,13 +217,21 @@ Mat interpolate_missing_data(Mat image)
 						}
 						// increase search radius
 						range++;
+						if(range > 100)
+						{
+							cerr << "ERROR: Nearest valid pixel not found!" << endl;
+							exit(2);
+						}
 					}
 					px = sum_nearest / valid_nearest;
 				}
+
 				out.at<float>(y, x, c) = px;
 			}
+
 		}
 	}
+	cout << "Interpolating missing data done!" << endl;
 	return out;
 }
 

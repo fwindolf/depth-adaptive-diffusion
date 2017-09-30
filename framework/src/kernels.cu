@@ -261,14 +261,20 @@ __global__ void g_compute_rho(float *iL, float *iR, float *Rho, int w, int h,
 	}
 }
 
-__global__ void g_init_phi(float *Phi, int w, int h, int gc)
+__global__ void g_init_phi(float *Phi, float *U, int w, int h, int gc)
 {
 	int x = threadIdx.x + blockDim.x * blockIdx.x;
 	int y = threadIdx.y + blockDim.y * blockIdx.y;
 	if (x < w && y < h)
 	{
-		// Initialize gamma_min to 1
 		write_data(Phi, 1.f, w, h, gc, x, y, 0);
+
+		for(int g = 1; g < gc; g++)
+		{
+			// Set to 1 if u greater that this gamma's threshold
+			if(read_data(U, w, h, x, y) > (float)(255.f * g)/gc)
+				write_data(Phi, 1.f, w, h, gc, x, y, g);
+		}
 	}
 }
 

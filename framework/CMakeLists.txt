@@ -19,7 +19,7 @@ FIND_PACKAGE(OpenCV REQUIRED)
 SET(
 	CUDA_NVCC_FLAGS
 	${CUDA_NVCC_FLAGS};
-	--debug; # Create debug information
+	#--debug; # Create debug information
 	--device-debug; # Create debug information for device
 	#--profile;
 	#-lineinfo; # Add line information 
