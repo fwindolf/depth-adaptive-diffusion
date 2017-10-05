@@ -106,7 +106,7 @@ void read_parameters(config &conf, int argc, char **argv)
 	conf.max_h = 2000;
 	conf.dx = 1.f;
 	conf.dy = 1.f;
-	conf.dg = .5f;
+	conf.dg = 1.f;
 	conf.gray = false;
 	conf.disparities_from_file = false;
 	conf.lambda = 30.f;
