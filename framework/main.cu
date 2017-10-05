@@ -246,59 +246,10 @@ cv::Mat calculate_disparities(const config c)
 		if (iterations % (c.max_iterations / 5) == 0)
 		{
 			cout << "Iteration " << iterations << endl;
-			/*
-			 for (int g = 0; g < gc; g++)
-			 {
-			 stringstream path1, path2, path3;
-			 path1 << "p/p1_" << setfill('0') << setw(5) <<  iterations << "_" << setfill('0') << setw(3) << g + c.gamma_min;
-			 path2 << "p/p2_" << setfill('0') << setw(5) <<  iterations << "_" << setfill('0') << setw(3) << g + c.gamma_min;
-			 path3 << "p/p3_" << setfill('0') << setw(5) << 	 iterations << "_" << setfill('0') << setw(3) << g + c.gamma_min;
-			 size_t ip1 = g * w * h;
-			 size_t ip2 = (1 * gc + g) * w * h;
-			 size_t ip3 = (2 * gc + g) * w * h;
-			 save_from_GPU(path1.str(), &P[ip1], w, h);
-			 save_from_GPU(path2.str(), &P[ip2], w, h);
-			 save_from_GPU(path3.str(), &P[ip3], w, h);
-			 }
-
-			 for (int g = 0; g < gc; g++)
-			 {
-			 stringstream pathx, pathy, pathg;
-			 pathx << "grad/gradx_" << setfill('0') << setw(5) <<  iterations << "_" << setfill('0') << setw(3) << g + c.gamma_min;
-			 pathy << "grad/grady_" << setfill('0') << setw(5) <<  iterations << "_" << setfill('0') << setw(3) << g + c.gamma_min;
-			 pathg << "grad/gradg_" << setfill('0') << setw(5) <<  iterations << "_" << setfill('0') << setw(3) << g + c.gamma_min;
-			 size_t ip1 = g * w * h;
-			 size_t ip2 = (1 * gc + g) * w * h;
-			 size_t ip3 = (2 * gc + g) * w * h;
-			 save_from_GPU(pathx.str(), &Grad3_Phi[ip1], w, h);
-			 save_from_GPU(pathy.str(), &Grad3_Phi[ip2], w, h);
-			 save_from_GPU(pathg.str(), &Grad3_Phi[ip3], w, h);
-			 }
-
-			 for (int g = 0; g < gc; g++)
-			 {
-			 stringstream path;
-			 path << "phi/phi_" << setfill('0') << setw(5) << iterations << "_" << setfill('0') << setw(3) << g + c.gamma_min;
-			 save_from_GPU(path.str(), &Phi[g * w * h], w, h);
-			 }
-
-			 for (int g = 0; g < gc; g++)
-			 {
-			 stringstream path;
-			 path << "div/div_" << setfill('0') << setw(5) << iterations << "_" << setfill('0') << setw(3) << g + c.gamma_min;
-			 save_from_GPU(path.str(), &Div3_P[g * w * h], w, h);
-			 }
-			 */
-
-			// Calculate the new G
-			g_compute_u<<<grid2D, block2D>>>(Phi, U, w, h, c.gamma_min,
-					c.gamma_max);
-			CUDA_CHECK;
 
 			cudaMemset(energy, 0, sizeof(float));
 			CUDA_CHECK;
 
-			//g_compute_energy<<<grid2D, block2D>>>(U, IL, IR, energy, w, h, nc,c.lambda);
 			g_compute_energy<<<grid2D, block2D>>>(Grad3_Phi, Phi, Rho, energy,
 					w, h, gc, c.lambda);
 			CUDA_CHECK;
@@ -316,6 +267,10 @@ cv::Mat calculate_disparities(const config c)
 
 		iterations++;
 	}
+
+	// Calculate the new G
+	g_compute_u<<<grid2D, block2D>>>(Phi, U, w, h, c.gamma_min, c.gamma_max);
+	CUDA_CHECK;
 
 	// Move disparities from device to host
 	cudaMemcpy(imgOut, U, uBytes, cudaMemcpyDeviceToHost);
