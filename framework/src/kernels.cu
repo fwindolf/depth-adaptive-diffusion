@@ -431,12 +431,13 @@ __global__ void g_compute_energy(float *Grad3_Phi, float *Phi, float *Rho, float
        float e=0.f;
        for (int g = 0; g < gc; g++)
          {
+          float rho =read_data(Rho, w, h, gc, x, y, g);
           int idx_p3_z = 2 * gc + g;
           float phi   = read_data(Phi, w, h, gc, x, y, g);
           float grad_g = read_data(Grad3_Phi, w, h, (3*gc), x, y, idx_p3_z);
           float phi_x = read_data(Phi, w, h, gc, x+1, y, g);
           float phi_y = read_data(Phi, w, h, gc, x, y+1, g);
-           e += (read_data(Rho, w, h, gc, x, y, g)*grad_g)+sqrt(square(phi_x - phi) + square(phi_y - phi));
+           e += (rho*fabs(grad_g))+sqrt(square(phi_x - phi) + square(phi_y - phi));
           }
 
    
