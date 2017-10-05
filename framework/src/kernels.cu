@@ -251,7 +251,8 @@ __global__ void g_compute_rho(float *iL, float *iR, float *Rho, int w, int h,
 			for (int c = 0; c < nc; c++)
 			{
 				float il = read_data(iL, w, h, nc, x, y, c);
-				float ir = read_data(iR, w, h, nc, x - g, y, c);
+				//float ir = read_data(iR, w, h, nc, x - g, y, c);
+                  float ir = read_data(iR, w, h, nc, x + g, y, c);
 				r += lambda * fabs(il - ir);
 			}
 			// Create entry at layer g (normalized to range from 0 to gamma_max - gamma_min)

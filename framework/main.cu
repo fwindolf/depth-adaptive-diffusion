@@ -533,7 +533,7 @@ int main(int argc, char **argv)
 	// Reduce range from [0, 255] to [0, 1]
 	mDisparities /= 255.f;
 	//normalize(mDisparities, mDisparities, 0.f, 1.f, cv::NORM_MINMAX, CV_32FC1);
-	showImage("Disparities", mDisparities, 600, 100);
+	showImage("Disparities", (3*mDisparities), 600, 100);
 	save_image("disparities", mDisparities);
 
 	showImage("Output", mOut, 100, 600);
