@@ -4,7 +4,7 @@
 
 // TODO: Use shared memory to load data from iL and iR to shared memory
 __global__ void g_compute_rho(float *iL, float *iR, float *Rho, int w, int h,
-		int nc, int gamma_min, int gamma_max, float lambda)
+		int nc, int gamma_min, int gamma_max, float lambda,float dg )
 {
 	int x = threadIdx.x + blockDim.x * blockIdx.x;
 	int y = threadIdx.y + blockDim.y * blockIdx.y;
@@ -20,8 +20,8 @@ __global__ void g_compute_rho(float *iL, float *iR, float *Rho, int w, int h,
 			for (int c = 0; c < nc; c++)
 			{
 				float il = read_data(iL, w, h, nc, x, y, c);
-				//float ir = read_data(iR, w, h, nc, x - g, y, c);
-                  float ir = read_data(iR, w, h, nc, x + g, y, c);
+				float ir = read_data(iR, w, h, nc, x - (g*dg), y, c);
+                  //float ir = read_data(iR, w, h, nc, x + g, y, c);
 				r += lambda * fabs(il - ir);
 			}
 			// Create entry at layer g (normalized to range from 0 to gamma_max - gamma_min)
@@ -184,7 +184,7 @@ __global__ void g_compute_u(float *Phi, float *U, int w, int h, int gamma_min,
 		float u = gamma_min;
 		for (int g = 0; g < gamma_max - gamma_min; g++)
 		{
-			u += round(read_data(Phi, w, h, gamma_max - gamma_min, x, y, g));
+			u += (read_data(Phi, w, h, gamma_max - gamma_min, x, y, g));
 		}
 		write_data(U, u, w, h, x, y);
 	}

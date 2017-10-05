@@ -201,7 +201,7 @@ cv::Mat calculate_disparities(const config c)
 
 	// Compute a global rho (that doesn't change...)
 	g_compute_rho<<<grid2D, block2D>>>(IL, IR, Rho, w, h, nc, c.gamma_min,
-			c.gamma_max, c.lambda);
+			c.gamma_max, c.lambda, c.dg);
 	CUDA_CHECK;
 
 	for (int g = 0; g < gc; g++)
@@ -383,7 +383,7 @@ cv::Mat adaptive_diffusion(const cv::Mat mDisparities, const cv::Mat mIn,
 	CUDA_CHECK;
 
 	// Normalize to [0, 1]
-	normalize(Depths, w, h, 0.f, 1.f);
+	//normalize(Depths, w, h, 0.f, 1.f);
 
 	// ---- Calculate the G matrix
 	g_compute_g_matrix<<<grid2D, block2D>>>(Depths, G, w, h, c.focal_plane,
@@ -391,7 +391,7 @@ cv::Mat adaptive_diffusion(const cv::Mat mDisparities, const cv::Mat mIn,
 	CUDA_CHECK;
 
 	// Normalize to [0, 1]
-	normalize(G, w, h, 0.f, 1.f);
+	//normalize(G, w, h, 0.f, 1.f);
 
 	save_from_GPU("depths", Depths, w, h);
 	save_from_GPU("g", G, w, h);
