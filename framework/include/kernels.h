@@ -79,8 +79,9 @@ __global__ void g_compute_u(float *Phi, float *U, int w, int h, int gamma_min,
  *
  * x * y threads needed
  */
-__global__ void g_compute_energy(float * U, float *IL, float *IR,
-		float * energy, int w, int h, int nc, float lambda);
+//__global__ void g_compute_energy(float * U, float *IL, float *IR,float * energy, int w, int h, int nc, float lambda);
+__global__ void g_compute_energy(float * Grad3_Phi, float * Phi, float *Rho,
+		float *energy, int w, int h, int gc, float lambda);
 
 /**
  * Calculate the depth from the disparity values
