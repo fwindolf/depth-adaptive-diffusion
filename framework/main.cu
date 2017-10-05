@@ -26,7 +26,7 @@ void check_Phi(float * Phi, int w, int h, int gc)
 			{
 				assert(phi_check[i] == 1.f);
 			}
-			else if (g == gc)
+			else if (g == gc - 1)
 			{
 				assert(phi_check[i] == 0.f);
 			}
