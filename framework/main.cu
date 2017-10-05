@@ -292,20 +292,18 @@ cv::Mat calculate_disparities(const config c)
 			 */
 
 			// Calculate the new G
-			g_compute_u<<<grid2D, block2D>>>(Phi, U, w, h, c.gamma_min,
-					c.gamma_max);
+			g_compute_u<<<grid2D, block2D>>>(Phi, U, w, h, c.gamma_min, c.gamma_max);
 			CUDA_CHECK;
 
 			cudaMemset(energy, 0, sizeof(float));
 			CUDA_CHECK;
 
-			g_compute_energy<<<grid2D, block2D>>>(U, IL, IR, energy, w, h, nc,
-					c.lambda);
+			//g_compute_energy<<<grid2D, block2D>>>(U, IL, IR, energy, w, h, nc,c.lambda);
+              g_compute_energy<<<grid2D, block2D>>>( Grad3_Phi, Phi, Rho, energy, w, h, gc , c.lambda);
 			CUDA_CHECK;
 
 			float energy_host = 0.f;
-			cudaMemcpy(&energy_host, energy, sizeof(float),
-					cudaMemcpyDeviceToHost);
+			cudaMemcpy(&energy_host, energy, sizeof(float), cudaMemcpyDeviceToHost);
 			CUDA_CHECK;
 
 			cout << iterations << ": Energy is " << energy_host << endl;

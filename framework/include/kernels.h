@@ -12,8 +12,7 @@
  * Rho is the error values for different disparities
  * IL and IR are the left/right original images with x * y * nc
  */
-__global__ void g_compute_rho(float *iL, float *iR, float *Rho, int w, int h,
-		int nc, int gamma_min, int gamma_max, float lambda);
+__global__ void g_compute_rho(float *iL, float *iR, float *Rho, int w, int h, int nc, int gamma_min, int gamma_max, float lambda);
 
 /**
  * Initialize Phi with entries 1.0 in layer gamma_min
@@ -30,8 +29,7 @@ __global__ void g_init_phi(float *Phi, int w, int h, int gc);
  * Phi is dimensions (w * h * gc) and can be in [0, 1], thus the value gets
  * clamped back into the interval in the projection
  */
-__global__ void g_update_phi(float *Phi, float *Div3_P, int w, int h, int gc,
-		float tau_p);
+__global__ void g_update_phi(float *Phi, float *Div3_P, int w, int h, int gc, float tau_p);
 
 /**
  * Update and backproject the P vector and save the result back to P
@@ -41,8 +39,7 @@ __global__ void g_update_phi(float *Phi, float *Div3_P, int w, int h, int gc,
  * P = (p1, p2, p3) with dimensions (w * h * gc * 3)
  * Grad3_Phi is the gradient of Phi in x, y and gamma direction (w * h * gc * 3)
  */
-__global__ void g_update_p(float *P, float *Grad3_Phi, float *Rho, int w, int h,
-		int gc, float tau_d);
+__global__ void g_update_p(float *P, float *Grad3_Phi, float *Rho, int w, int h, int gc, float tau_d);
 
 /**
  * Calculate the gradient in x, y and gamma direction
@@ -52,8 +49,7 @@ __global__ void g_update_p(float *P, float *Grad3_Phi, float *Rho, int w, int h,
  *
  * Grad3_Phi is the resulting w * h * gc * 3 with one channel for x, y and g direction
  */
-__global__ void g_grad3(float *Phi, float *Grad3_Phi, int w, int h, int gc,
-		float dx, float dy, float dg);
+__global__ void g_grad3(float *Phi, float *Grad3_Phi, int w, int h, int gc, float dx, float dy, float dg);
 
 /**
  * Calculate the divergence of P
@@ -63,24 +59,22 @@ __global__ void g_grad3(float *Phi, float *Grad3_Phi, int w, int h, int gc,
  * P is stored in (w * h * gc * 3), so (p1, p2, p3)
  * Div3_P has the same dimensions as Phi (w * h * gc)
  */
-__global__ void g_div3(float *P, float *Div3_P, int w, int h, int gc, float dx,
-		float dy, float dg);
+__global__ void g_div3(float *P, float *Div3_P, int w, int h, int gc, float dx, float dy, float dg);
 
 /**
  * Calculate the function u(x) (=G) from Phi
  *
  * x * y threads neeeded
  */
-__global__ void g_compute_u(float *Phi, float *U, int w, int h, int gamma_min,
-		int gamma_max);
+__global__ void g_compute_u(float *Phi, float *U, int w, int h, int gamma_min, int gamma_max);
 
 /**
  * Calcualate the energy of the current gamma matrix
  *
  * x * y threads needed
  */
-__global__ void g_compute_energy(float * U, float *IL, float *IR,
-		float * energy, int w, int h, int nc, float lambda);
+//__global__ void g_compute_energy(float * U, float *IL, float *IR,float * energy, int w, int h, int nc, float lambda);
+__global__ void g_compute_energy(float * Grad3_Phi, float * Phi, float *Rho, float *energy, int w, int h , int gc ,float lambda);
 
 /**
  * Calculate the depth from the disparity values
@@ -93,8 +87,7 @@ __global__ void g_compute_energy(float * U, float *IL, float *IR,
  *
  * The result will be stored in Depths
  */
-__global__ void g_compute_depth(float * Disparities, float *Depths, int w,
-		int h, float baseline, int f, int doffs);
+__global__ void g_compute_depth(float * Disparities, float *Depths, int w, int h, float baseline, int f, int doffs);
 
 /**
  * Compute the g matrix from the Depths
@@ -107,8 +100,7 @@ __global__ void g_compute_depth(float * Disparities, float *Depths, int w,
  *
  * The result will be stored in G
  */
-__global__ void g_compute_g_matrix(float *Depths, float *G, int w, int h,
-		float z_f, float radius);
+__global__ void g_compute_g_matrix(float *Depths, float *G, int w, int h, float z_f, float radius);
 
 /**
  * Apply the G matrix to the gradients
@@ -120,8 +112,7 @@ __global__ void g_compute_g_matrix(float *Depths, float *G, int w, int h,
  *
  * The result will be stored back in the gradients
  */
-__global__ void g_apply_g(float *Grad_x, float *Grad_y, float *G, int w, int h,
-		int nc);
+__global__ void g_apply_g(float *Grad_x, float *Grad_y, float *G, int w, int h, int nc);
 
 /**
  * Update step for the image during the diffusion
@@ -134,7 +125,6 @@ __global__ void g_apply_g(float *Grad_x, float *Grad_y, float *G, int w, int h,
  *
  * The output will be stored back into I
  */
-__global__ void g_update_step(float *I, float *D, int w, int h, int nc,
-		float tau);
+__global__ void g_update_step(float *I, float *D, int w, int h, int nc, float tau);
 
 #endif

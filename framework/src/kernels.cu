@@ -256,7 +256,8 @@ __global__ void g_compute_rho(float *iL, float *iR, float *Rho, int w, int h,
 			}
 			// Create entry at layer g (normalized to range from 0 to gamma_max - gamma_min)
 			int gc = gamma_max - gamma_min;
-			write_data(Rho, r, w, h, nc * gc, x, y, g - gamma_min);
+			 //write_data(Rho, r, w, h, nc * gc, x, y, g - gamma_min);
+              write_data(Rho, r, w, h, gc, x, y, g - gamma_min);
 		}
 	}
 }
@@ -419,6 +420,82 @@ __global__ void g_compute_u(float *Phi, float *U, int w, int h, int gamma_min,
 	}
 }
 
+__global__ void g_compute_energy(float *Grad3_Phi, float *Phi, float *Rho, float *energy,int w, int h, int gc, float lambda){
+    int x = threadIdx.x + blockDim.x * blockIdx.x;
+	int y = threadIdx.y + blockDim.y * blockIdx.y;
+    
+   
+    __shared__ float sm;   
+    if(x < w && y < h)
+     { 
+       float e=0.f;
+       for (int g = 0; g < gc; g++)
+         {
+          int idx_p3_z = 2 * gc + g;
+          float phi   = read_data(Phi, w, h, gc, x, y, g);
+          float grad_g = read_data(Grad3_Phi, w, h, (3*gc), x, y, idx_p3_z);
+          float phi_x = read_data(Phi, w, h, gc, x+1, y, g);
+          float phi_y = read_data(Phi, w, h, gc, x, y+1, g);
+           e += (read_data(Rho, w, h, gc, x, y, g)*grad_g)+sqrt(square(phi_x - phi) + square(phi_y - phi));
+          }
+
+   
+		// Add up the energy of this block
+		atomicAdd(&sm, e);
+		__syncthreads();
+
+		// Add this to the current (global) energy
+		if (threadIdx.x == 0)
+			atomicAdd(energy, sm);
+       
+     }
+}
+
+
+/*
+__global__ void g_compute_energy3(float * U,float *Rho,float *Phi, 
+		float * energy, int w, int h, int gc, float dg)
+{
+	int x = threadIdx.x + blockDim.x * blockIdx.x;
+	int y = threadIdx.y + blockDim.y * blockIdx.y;
+
+	__shared__ float sm;
+
+	if (x < w && y < h)
+	{
+		float e = 0.f;
+
+		// Regularizing term: |grad(u(x))|
+		int u = read_data(U, w, h, x, y);
+		int ux = read_data(U, w, h, x + 1, y);
+		int uy = read_data(U, w, h, x, y + 1);
+		e += sqrt(square(ux - u) + square(uy - u));
+
+		// Data term: rho(u(x), x)
+
+		for (int g = 0; g < nc; g++)
+		{
+		   float phi   = read_data(Phi, w, h, gc, x, y, g);
+           float grad_gamma= (read_data(Phi, w, h, gc, x, y, g + 1) - phi) / dg;
+           float phi_x = read_data(Phi, w, h, gc, x+1, y, g);
+           float phi_y = read_data(Phi, w, h, gc, x, y+1, g);
+           e += (read_data(Rho, w, h, gc, x, y, g)*grad_gamma);	
+		}
+        
+        
+
+		// Add up the energy of this block
+		atomicAdd(&sm, e);
+		__syncthreads();
+
+		// Add this to the current (global) energy
+		if (threadIdx.x == 0)
+			atomicAdd(energy, sm);
+	}
+
+}
+*/
+/*
 __global__ void g_compute_energy(float * U, float *IL, float *IR,
 		float * energy, int w, int h, int nc, float lambda)
 {
@@ -445,6 +522,8 @@ __global__ void g_compute_energy(float * U, float *IL, float *IR,
 			float ir = read_data(IR, w, h, nc, x + u, y, c);
 			e += lambda * fabs(il - ir);
 		}
+        
+        
 
 		// Add up the energy of this block
 		atomicAdd(&sm, e);
@@ -456,7 +535,7 @@ __global__ void g_compute_energy(float * U, float *IL, float *IR,
 	}
 
 }
-
+*/
 __global__ void g_compute_depth(float * Disparities, float *Depths, int w,
 		int h, float baseline, int f, int doffs)
 {
