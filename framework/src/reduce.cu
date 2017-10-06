@@ -176,7 +176,7 @@ __host__ void normalize(float *Data, int w, int h, float o_min, float o_max)
 
 {
   float *dept = new float[(size_t) w * h];
-  cudaMemcpy(dept,Data,(w * h) * sizeof(float), cudaMemcpyDeviceToHost);
+  cudaMemcpy(dept,Data,(size_t)(w * h) * sizeof(float), cudaMemcpyDeviceToHost);
   float tmp =0.f;
   // Sorting an array
   for(int i=0;i<(w*h);i++)

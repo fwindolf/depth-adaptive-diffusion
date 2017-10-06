@@ -387,7 +387,7 @@ cv::Mat adaptive_diffusion(const cv::Mat mDisparities, const cv::Mat mIn,
 	normalize(Depths, w, h, 0.f, 1.f);
     cudaMemcpy(check, Depths, (ndepths), cudaMemcpyDeviceToHost);
  
-   
+   /*
    for(int i=0;i<(w*h);i++)
 
      {
@@ -397,7 +397,7 @@ cv::Mat adaptive_diffusion(const cv::Mat mDisparities, const cv::Mat mIn,
       }
     
    cout<<"\n"; 
-    
+   */ 
 	// ---- Calculate the G matrix
 	g_compute_g_matrix<<<grid2D, block2D>>>(Depths, G, w, h, c.focal_plane, c.radius);
 	CUDA_CHECK;
