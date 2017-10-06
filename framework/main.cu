@@ -312,9 +312,10 @@ cv::Mat adaptive_diffusion(const cv::Mat mDisparities, const cv::Mat mIn,
 	get_dimensions(mIn, w, h, nc);
 
 	cv::Mat mDiffused = cv::Mat(h, w, CV_32FC3);
-
+    cv::Mat mCheck = cv::Mat(h, w, CV_32FC1);
 	// Convert to layered representation
 	float *imgIn = new float[(size_t) w * h * nc];
+    float *check = new float[(size_t) w * h];
 	convert_mat_to_layered(imgIn, mIn);
 
 	float *imgDisparities = new float[(size_t) w * h];
@@ -331,6 +332,7 @@ cv::Mat adaptive_diffusion(const cv::Mat mDisparities, const cv::Mat mIn,
 	// G matrix
 	float *G = NULL;
 	size_t ngbytes = (size_t) (w * h) * sizeof(float);
+    
 
 	// Gradient in x,y direction, divergence
 	float *Grad_x, *Grad_y, *Divergence = NULL;
@@ -378,20 +380,31 @@ cv::Mat adaptive_diffusion(const cv::Mat mDisparities, const cv::Mat mIn,
 			(h + block3D.y - 1) / block3D.y, (nc + block3D.z - 1) / block3D.z);
 
 	// Compute the depth from the disparity values
-	g_compute_depth<<<grid2D, block2D>>>(Disparities, Depths, w, h, c.baseline,
-			c.focal_length, c.doffs);
+	g_compute_depth<<<grid2D, block2D>>>(Disparities, Depths, w, h, c.baseline, c.focal_length, c.doffs);
 	CUDA_CHECK;
 
 	// Normalize to [0, 1]
-	//normalize(Depths, w, h, 0.f, 1.f);
+	normalize(Depths, w, h, 0.f, 1.f);
+    cudaMemcpy(check, Depths, (ndepths), cudaMemcpyDeviceToHost);
+ 
+   
+   for(int i=0;i<(w*h);i++)
 
+     {
+
+      cout<<check[i]<<"\t";
+
+      }
+    
+   cout<<"\n"; 
+    
 	// ---- Calculate the G matrix
-	g_compute_g_matrix<<<grid2D, block2D>>>(Depths, G, w, h, c.focal_plane,
-			c.radius);
+	g_compute_g_matrix<<<grid2D, block2D>>>(Depths, G, w, h, c.focal_plane, c.radius);
 	CUDA_CHECK;
 
-	// Normalize to [0, 1]
-	//normalize(G, w, h, 0.f, 1.f);
+	//Normalize to [0, 1]
+	normalize(G, w, h, 0.f, 1.f);
+    
 
 	save_from_GPU("depths", Depths, w, h);
 	save_from_GPU("g", G, w, h);
@@ -426,9 +439,11 @@ cv::Mat adaptive_diffusion(const cv::Mat mDisparities, const cv::Mat mIn,
 	// Copy result back to host
 	cudaMemcpy(imgIn, In, nbytes, cudaMemcpyDeviceToHost);
 	CUDA_CHECK;
+    
+    
 
 	convert_layered_to_mat(mDiffused, imgIn);
-
+    convert_layered_to_mat(mCheck, check );
 	// free memory
 	cudaFree(In);
 	CUDA_CHECK;
@@ -447,8 +462,9 @@ cv::Mat adaptive_diffusion(const cv::Mat mDisparities, const cv::Mat mIn,
 
 	delete[] imgIn;
 	delete[] imgDisparities;
+    delete[] check;
 
-	return mDiffused;
+	return mCheck;
 }
 
 int main(int argc, char **argv)
@@ -490,7 +506,7 @@ int main(int argc, char **argv)
 	// Reduce range from [0, 255] to [0, 1]
 	mDisparities /= 255.f;
 	//normalize(mDisparities, mDisparities, 0.f, 1.f, cv::NORM_MINMAX, CV_32FC1);
-	showImage("Disparities", (3*mDisparities), 600, 100);
+	showImage("Disparities", (mDisparities), 600, 100);
 	save_image("disparities", mDisparities);
 
 	showImage("Output", mOut, 100, 600);
