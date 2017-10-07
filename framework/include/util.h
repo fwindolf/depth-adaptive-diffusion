@@ -80,6 +80,7 @@ __device__ void write_data(float *I, const float data, int w, int h, int atx, in
 */
 __device__ void write_data(int *I, const int data, int w, int h, int atx, int aty);
 
+
 /**
  * Square a number
  */

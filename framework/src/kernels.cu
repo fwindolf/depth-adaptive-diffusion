@@ -1,6 +1,8 @@
 #include "kernels.h"
 #include "util.h"
 #include "assert.h"
+#include <curand.h>
+#include <curand_kernel.h>
 
 // TODO: Use shared memory to load data from iL and iR to shared memory
 __global__ void g_compute_rho(float *iL, float *iR, float *Rho, int w, int h,
@@ -36,7 +38,19 @@ __global__ void g_init_phi(float *Phi, int w, int h, int gc)
 	int x = threadIdx.x + blockDim.x * blockIdx.x;
 	int y = threadIdx.y + blockDim.y * blockIdx.y;
 	if (x < w && y < h)
-	{
+	{    
+        
+        for(int g=1;g < (gc-1);g++)
+         {
+           curandState_t state;
+           /* we have to initialize the state */
+           curand_init((unsigned long long)clock()+(x+(w*y)+w*h*g) , /* the seed controls the sequence of random values that are produced */
+              0, /* the sequence number is only important with multiple cores */
+              0, /* the offset is how much extra we advance in the sequence for each call, can be 0 */
+              &state);
+              float random=curand_uniform(&state);
+          write_data(Phi,random, w, h, gc, x, y, g );
+          }
 		// Initialize gamma_min to 1
 		write_data(Phi, 1.f, w, h, gc, x, y, 0);
 	}

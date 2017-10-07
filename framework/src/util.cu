@@ -117,6 +117,7 @@ __device__ void write_data(int *I, const int data, int w, int h, int atx, int at
 	write_data<int>(I, data, w, h, atx, aty);
 }
 
+
 __device__ __host__ float square(float a)
 {
 	return a * a;
