@@ -201,7 +201,7 @@ cv::Mat calculate_disparities(const config c)
 
 	// Compute a global rho (that doesn't change...)
 	g_compute_rho<<<grid2D, block2D>>>(IL, IR, Rho, w, h, nc, c.gamma_min,
-			c.gamma_max, c.lambda);
+			c.gamma_max, c.lambda, c.dg);
 	CUDA_CHECK;
 
 	for (int g = 0; g < gc; g++)
@@ -390,7 +390,7 @@ cv::Mat adaptive_diffusion(const cv::Mat mDisparities, const cv::Mat mIn,
 			c.radius);
 	CUDA_CHECK;
 
-	// Normalize to [0, 1]
+	//Normalize to [0, 1]
 	normalize(G, w, h, 0.f, 1.f);
 
 	save_from_GPU("depths", Depths, w, h);
@@ -428,7 +428,6 @@ cv::Mat adaptive_diffusion(const cv::Mat mDisparities, const cv::Mat mIn,
 	CUDA_CHECK;
 
 	convert_layered_to_mat(mDiffused, imgIn);
-
 	// free memory
 	cudaFree(In);
 	CUDA_CHECK;
@@ -448,7 +447,7 @@ cv::Mat adaptive_diffusion(const cv::Mat mDisparities, const cv::Mat mIn,
 	delete[] imgIn;
 	delete[] imgDisparities;
 
-	return mDiffused;
+	return mDisparities;
 }
 
 int main(int argc, char **argv)
@@ -489,7 +488,8 @@ int main(int argc, char **argv)
 
 	// Reduce range from [0, 255] to [0, 1]
 	mDisparities /= 255.f;
-	//normalize(mDisparities, mDisparities, 0.f, 1.f, cv::NORM_MINMAX, CV_32FC1);
+
+	normalize(mDisparities, mDisparities, 0.f, 1.f, cv::NORM_MINMAX, CV_32FC1);
 	showImage("Disparities", mDisparities, 600, 100);
 	save_image("disparities", mDisparities);
 

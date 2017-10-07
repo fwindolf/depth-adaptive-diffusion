@@ -13,7 +13,7 @@
  * IL and IR are the left/right original images with x * y * nc
  */
 __global__ void g_compute_rho(float *iL, float *iR, float *Rho, int w, int h,
-		int nc, int gamma_min, int gamma_max, float lambda);
+		int nc, int gamma_min, int gamma_max, float lambda, float dg);
 
 /**
  * Initialize Phi with entries 1.0 in layer gamma_min
