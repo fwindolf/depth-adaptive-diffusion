@@ -198,8 +198,6 @@ cv::Mat calculate_disparities(const config c)
 	g_init_phi<<<grid2D, block2D>>>(Phi, w, h, gc);
 	CUDA_CHECK;
 
-	check_Phi(Phi, w, h, gc);
-
 	// Compute a global rho (that doesn't change...)
 	g_compute_rho<<<grid2D, block2D>>>(IL, IR, Rho, w, h, nc, c.gamma_min,
 			c.gamma_max, c.lambda, c.dg);
@@ -229,8 +227,6 @@ cv::Mat calculate_disparities(const config c)
 		g_update_phi<<<grid2D, block2D>>>(Phi, Div3_P, w, h, gc, c.tau_p);
 		CUDA_CHECK;
 
-		check_Phi(Phi, w, h, gc);
-
 		// Calculate the gradient in x, y, and gamma direction
 		g_grad3<<<grid2D, block2D>>>(Phi, Grad3_Phi, w, h, gc, c.dx, c.dy,
 				c.dg);
@@ -254,7 +250,6 @@ cv::Mat calculate_disparities(const config c)
 			g_compute_energy<<<grid2D, block2D>>>(Grad3_Phi, Phi, Rho, energy,
 					w, h, gc, c.lambda);
 			CUDA_CHECK;
-
 
 			cudaMemcpy(&energy_host, energy, sizeof(float),
 					cudaMemcpyDeviceToHost);

@@ -183,7 +183,6 @@ __global__ void g_compute_u(float *Phi, float *U, int w, int h, int gamma_min,
 		float u = gamma_min;
 		for (int g = 0; g < gamma_max - gamma_min; g++)
 		{
-			// TODO: Need to apply dg here?
 			u += read_data(Phi, w, h, gamma_max - gamma_min, x, y, g);
 		}
 		write_data(U, u, w, h, x, y);
