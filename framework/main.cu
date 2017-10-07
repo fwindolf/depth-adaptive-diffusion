@@ -242,7 +242,7 @@ cv::Mat calculate_disparities(const config c)
 		// check convergence
 		float energy_host = 0.f;
 
-		if (iterations % (c.max_iterations / 5) == 0)
+		if (iterations % (c.max_iterations / 10) == 0)
 		{
 			cudaMemset(energy, 0, sizeof(float));
 			CUDA_CHECK;
