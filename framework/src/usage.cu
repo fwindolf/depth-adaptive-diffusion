@@ -106,7 +106,7 @@ void read_parameters(config &conf, int argc, char **argv)
 	conf.max_h = 2000;
 	conf.dx = 1.f;
 	conf.dy = 1.f;
-	conf.dg = .5f;
+	conf.dg = 1.f;
 	conf.gray = false;
 	conf.disparities_from_file = false;
 	conf.lambda = 30.f;
@@ -145,6 +145,12 @@ void read_parameters(config &conf, int argc, char **argv)
 	getParam("tau_p", conf.tau_p, argc, argv);
 
 	getParam("tau_d", conf.tau_d, argc, argv);
+
+	getParam("dx", conf.dx, argc, argv);
+
+	getParam("dy", conf.dy, argc, argv);
+
+	getParam("dg", conf.dg, argc, argv);
 
 	getParam("tau", conf.tau, argc, argv);
 	if (conf.tau > 0.25f)
