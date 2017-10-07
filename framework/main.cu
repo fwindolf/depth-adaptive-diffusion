@@ -14,7 +14,7 @@ void check_Phi(float * Phi, int w, int h, int gc)
 {
 	cudaDeviceSynchronize();
 
-	float * phi_check = new float[w * h];
+	float phi_check[w * h];
 	for (int g = 0; g < gc; g++)
 	{
 		cudaMemcpy(phi_check, &Phi[g * w * h], w * h * sizeof(float),
@@ -36,16 +36,17 @@ void check_Phi(float * Phi, int w, int h, int gc)
 			}
 		}
 	}
+
 }
 
 void check_P(float * P, float *Rho, int w, int h, int gc)
 {
 	cudaDeviceSynchronize();
 
-	float * p1_check = new float[w * h];
-	float * p2_check = new float[w * h];
-	float * p3_check = new float[w * h];
-	float * rho = new float[w * h];
+	float p1_check[w * h];
+	float p2_check[w * h];
+	float p3_check[w * h];
+	float rho[w * h];
 
 	for (int g = 0; g < gc; g++)
 	{
@@ -197,11 +198,9 @@ cv::Mat calculate_disparities(const config c)
 	g_init_phi<<<grid2D, block2D>>>(Phi, w, h, gc);
 	CUDA_CHECK;
 
-	check_Phi(Phi, w, h, gc);
-
 	// Compute a global rho (that doesn't change...)
 	g_compute_rho<<<grid2D, block2D>>>(IL, IR, Rho, w, h, nc, c.gamma_min,
-			c.gamma_max, c.lambda);
+			c.gamma_max, c.lambda, c.dg);
 	CUDA_CHECK;
 
 	for (int g = 0; g < gc; g++)
@@ -228,8 +227,6 @@ cv::Mat calculate_disparities(const config c)
 		g_update_phi<<<grid2D, block2D>>>(Phi, Div3_P, w, h, gc, c.tau_p);
 		CUDA_CHECK;
 
-		check_Phi(Phi, w, h, gc);
-
 		// Calculate the gradient in x, y, and gamma direction
 		g_grad3<<<grid2D, block2D>>>(Phi, Grad3_Phi, w, h, gc, c.dx, c.dy,
 				c.dg);
@@ -239,14 +236,14 @@ cv::Mat calculate_disparities(const config c)
 		g_update_p<<<grid2D, block2D>>>(P, Grad3_Phi, Rho, w, h, gc, c.tau_d);
 		CUDA_CHECK;
 
-		if (iterations >= c.max_iterations)
+		if (iterations > c.max_iterations)
 			break;
 
 		// check convergence
-		if (iterations % (c.max_iterations / 5) == 0)
-		{
-			cout << "Iteration " << iterations << endl;
+		float energy_host = 0.f;
 
+		if (iterations % (c.max_iterations / 10) == 0)
+		{
 			cudaMemset(energy, 0, sizeof(float));
 			CUDA_CHECK;
 
@@ -254,7 +251,6 @@ cv::Mat calculate_disparities(const config c)
 					w, h, gc, c.lambda);
 			CUDA_CHECK;
 
-			float energy_host = 0.f;
 			cudaMemcpy(&energy_host, energy, sizeof(float),
 					cudaMemcpyDeviceToHost);
 			CUDA_CHECK;
@@ -390,7 +386,7 @@ cv::Mat adaptive_diffusion(const cv::Mat mDisparities, const cv::Mat mIn,
 			c.radius);
 	CUDA_CHECK;
 
-	// Normalize to [0, 1]
+	//Normalize to [0, 1]
 	normalize(G, w, h, 0.f, 1.f);
 
 	save_from_GPU("depths", Depths, w, h);
@@ -428,7 +424,6 @@ cv::Mat adaptive_diffusion(const cv::Mat mDisparities, const cv::Mat mIn,
 	CUDA_CHECK;
 
 	convert_layered_to_mat(mDiffused, imgIn);
-
 	// free memory
 	cudaFree(In);
 	CUDA_CHECK;
@@ -489,7 +484,8 @@ int main(int argc, char **argv)
 
 	// Reduce range from [0, 255] to [0, 1]
 	mDisparities /= 255.f;
-	//normalize(mDisparities, mDisparities, 0.f, 1.f, cv::NORM_MINMAX, CV_32FC1);
+
+	normalize(mDisparities, mDisparities, 0.f, 1.f, cv::NORM_MINMAX, CV_32FC1);
 	showImage("Disparities", mDisparities, 600, 100);
 	save_image("disparities", mDisparities);
 
