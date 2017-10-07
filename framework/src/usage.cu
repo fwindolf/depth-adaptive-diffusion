@@ -146,6 +146,12 @@ void read_parameters(config &conf, int argc, char **argv)
 
 	getParam("tau_d", conf.tau_d, argc, argv);
 
+	getParam("dx", conf.dx, argc, argv);
+
+	getParam("dy", conf.dy, argc, argv);
+
+	getParam("dg", conf.dg, argc, argv);
+
 	getParam("tau", conf.tau, argc, argv);
 	if (conf.tau > 0.25f)
 	{
