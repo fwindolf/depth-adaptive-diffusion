@@ -14,7 +14,7 @@ void check_Phi(float * Phi, int w, int h, int gc)
 {
 	cudaDeviceSynchronize();
 
-	float * phi_check = new float[w * h];
+	float phi_check[w * h];
 	for (int g = 0; g < gc; g++)
 	{
 		cudaMemcpy(phi_check, &Phi[g * w * h], w * h * sizeof(float),
@@ -36,16 +36,17 @@ void check_Phi(float * Phi, int w, int h, int gc)
 			}
 		}
 	}
+
 }
 
 void check_P(float * P, float *Rho, int w, int h, int gc)
 {
 	cudaDeviceSynchronize();
 
-	float * p1_check = new float[w * h];
-	float * p2_check = new float[w * h];
-	float * p3_check = new float[w * h];
-	float * rho = new float[w * h];
+	float p1_check[w * h];
+	float p2_check[w * h];
+	float p3_check[w * h];
+	float rho[w * h];
 
 	for (int g = 0; g < gc; g++)
 	{
@@ -239,14 +240,14 @@ cv::Mat calculate_disparities(const config c)
 		g_update_p<<<grid2D, block2D>>>(P, Grad3_Phi, Rho, w, h, gc, c.tau_d);
 		CUDA_CHECK;
 
-		if (iterations >= c.max_iterations)
+		if (iterations > c.max_iterations)
 			break;
 
 		// check convergence
+		float energy_host = 0.f;
+
 		if (iterations % (c.max_iterations / 5) == 0)
 		{
-			cout << "Iteration " << iterations << endl;
-
 			cudaMemset(energy, 0, sizeof(float));
 			CUDA_CHECK;
 
@@ -254,7 +255,7 @@ cv::Mat calculate_disparities(const config c)
 					w, h, gc, c.lambda);
 			CUDA_CHECK;
 
-			float energy_host = 0.f;
+
 			cudaMemcpy(&energy_host, energy, sizeof(float),
 					cudaMemcpyDeviceToHost);
 			CUDA_CHECK;
@@ -447,7 +448,7 @@ cv::Mat adaptive_diffusion(const cv::Mat mDisparities, const cv::Mat mIn,
 	delete[] imgIn;
 	delete[] imgDisparities;
 
-	return mDisparities;
+	return mDiffused;
 }
 
 int main(int argc, char **argv)
