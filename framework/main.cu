@@ -264,6 +264,13 @@ cv::Mat calculate_disparities(const config c)
 		iterations++;
 	}
 
+	for (int g = 0; g < gc; g++)
+	{
+		stringstream path;
+		path << "phi/phi_" << setfill('0') << setw(3) << g + c.gamma_min;
+		save_from_GPU(path.str(), &Phi[g * w * h], w, h);
+	}
+
 	// Calculate the new G
 	g_compute_u<<<grid2D, block2D>>>(Phi, U, w, h, c.gamma_min, c.gamma_max);
 	CUDA_CHECK;
@@ -361,10 +368,6 @@ cv::Mat adaptive_diffusion(const cv::Mat mDisparities, const cv::Mat mIn,
 			cudaMemcpyHostToDevice);
 	CUDA_CHECK;
 
-	// Copy image to device
-	cudaMemcpy(In, imgIn, nbytes, cudaMemcpyHostToDevice);
-	CUDA_CHECK;
-
 	dim3 block2D(128, 1);
 	dim3 grid2D((w + block2D.x - 1) / block2D.x,
 			(h + block2D.y - 1) / block2D.y);
@@ -380,48 +383,71 @@ cv::Mat adaptive_diffusion(const cv::Mat mDisparities, const cv::Mat mIn,
 
 	// Normalize to [0, 1]
 	normalize(Depths, w, h, 0.f, 1.f);
-
-	// ---- Calculate the G matrix
-	g_compute_g_matrix<<<grid2D, block2D>>>(Depths, G, w, h, c.focal_plane,
-			c.radius);
-	CUDA_CHECK;
-
-	//Normalize to [0, 1]
-	normalize(G, w, h, 0.f, 1.f);
-
 	save_from_GPU("depths", Depths, w, h);
-	save_from_GPU("g", G, w, h);
 
-	for (int i = 0; i < 15; i++)
+	bool printed = true;
+	for (int fp = 0; fp < 100; fp++)
 	{
-		// reset the gradient/divergence data
-		cudaMemset(Grad_x, 0, nbytes);
-		CUDA_CHECK;
-		cudaMemset(Grad_y, 0, nbytes);
-		CUDA_CHECK;
-		cudaMemset(Divergence, 0, nbytes);
+		// Copy image to device
+		cudaMemcpy(In, imgIn, nbytes, cudaMemcpyHostToDevice);
 		CUDA_CHECK;
 
-		//-- Gradient
-		g_gradient<<<grid3D, block3D>>>(In, Grad_x, Grad_y, w, h, nc);
+		cudaMemset(G, 0, ngbytes);
 		CUDA_CHECK;
 
-		// apply G matrix from texture memory
-		g_apply_g<<<grid2D, block2D>>>(Grad_x, Grad_y, G, w, h, nc);
+		// ---- Calculate the G matrix
+		g_compute_g_matrix<<<grid2D, block2D>>>(Depths, G, w, h, (float)fp/100.f,
+				c.radius);
 		CUDA_CHECK;
 
-		// calculate divergence
-		g_divergence<<<grid3D, block3D>>>(Grad_x, Grad_y, Divergence, w, h, nc);
-		CUDA_CHECK;
+		//Normalize to [0, 1]
+		normalize(G, w, h, 0.f, 1.f);
+		stringstream ss;
+		ss << "g/g_" << setw(3) << setfill('0') << fp;
+		save_from_GPU(ss.str(), G, w, h);
 
-		// do the update step
-		g_update_step<<<grid3D, block3D>>>(In, Divergence, w, h, nc, c.tau);
-		CUDA_CHECK;
+		for (int i = 0; i < 15; i++)
+		{
+			// reset the gradient/divergence data
+			cudaMemset(Grad_x, 0, nbytes);
+			CUDA_CHECK;
+			cudaMemset(Grad_y, 0, nbytes);
+			CUDA_CHECK;
+			cudaMemset(Divergence, 0, nbytes);
+			CUDA_CHECK;
+
+			//-- Gradient
+			g_gradient<<<grid3D, block3D>>>(In, Grad_x, Grad_y, w, h, nc);
+			CUDA_CHECK;
+
+			// apply G matrix from texture memory
+			g_apply_g<<<grid2D, block2D>>>(Grad_x, Grad_y, G, w, h, nc);
+			CUDA_CHECK;
+
+			// calculate divergence
+			g_divergence<<<grid3D, block3D>>>(Grad_x, Grad_y, Divergence, w, h,
+					nc);
+			CUDA_CHECK;
+
+			// do the update step
+			g_update_step<<<grid3D, block3D>>>(In, Divergence, w, h, nc, c.tau);
+			CUDA_CHECK;
+		}
+
+		ss.str("");
+		ss << "out/out_" << setw(3) << setfill('0') << fp;
+		save_from_GPU(ss.str(), In, w, h);
+
+		if(!printed && fp >= c.focal_plane * 100)
+		{
+			printed = true;
+			// Copy result back to host
+			cudaMemcpy(imgIn, In, nbytes, cudaMemcpyDeviceToHost);
+			CUDA_CHECK;
+		}
 	}
 
-	// Copy result back to host
-	cudaMemcpy(imgIn, In, nbytes, cudaMemcpyDeviceToHost);
-	CUDA_CHECK;
+
 
 	convert_layered_to_mat(mDiffused, imgIn);
 	// free memory
